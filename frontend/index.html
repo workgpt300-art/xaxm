@@ -1,23 +1,34 @@
-<!DOCTYPE html>
-<html lang="uk">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Earn Platform</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-      /* Стилі для всього додатку */
+<style>
+      /* Основні системні налаштування */
       body {
         margin: 0;
         padding: 0;
         background-color: black;
         color: white;
-        overflow: hidden; /* Запобігає випадковому скролу на мобілках */
-        -webkit-tap-highlight-color: transparent; /* Вимикає синій прямокутник при тапі в Safari/Chrome */
+        overflow: hidden;
+        
+        /* Глобальне вимкнення виділення та підсвічування */
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        
+        /* Запобігає зуму та затримці кліку */
+        touch-action: manipulation;
       }
 
       #root {
         height: 100vh;
+      }
+
+      /* Дозволяємо виділення тексту тільки в інпутах (логін/пароль) */
+      input, textarea {
+        user-select: text !important;
+        -webkit-user-select: text !important;
+        touch-action: auto !important;
       }
 
       /* АНІМАЦІЯ ВИЛІТАЮЧИХ ЦИФР */
@@ -38,22 +49,14 @@
 
       .animate-float-up {
         animation: float-up 0.8s ease-out forwards;
-        pointer-events: none; /* Щоб цифри не перехоплювали кліки */
-        user-select: none;
+        pointer-events: none;
         position: absolute;
         z-index: 100;
         font-weight: 900;
         filter: drop-shadow(0 0 8px rgba(74, 222, 128, 0.6));
       }
 
-      /* Гладкість енергії */
       .transition-all {
         transition: all 0.3s ease-out;
       }
     </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
