@@ -11,16 +11,25 @@ datasource db {
 
 // Модель Користувача
 model User {
-  id         String     @id @default(uuid())
-  email      String     @unique
-  password   String
-  balance    Float      @default(0.0)
-  role       String     @default("USER")
-  referrals  User[]     @relation("UserReferrals")
-  referrer   User?      @relation("UserReferrals", fields: [referrerId], references: [id])
-  referrerId String?
-  tasks      UserTask[]
-  createdAt  DateTime   @default(now())
+  id              String     @id @default(uuid())
+  email           String     @unique
+  password        String
+  balance         Float      @default(0.0)
+  role            String     @default("USER")
+  
+  // --- ПРОКАЧКА ТА БОНУСИ ---
+  clickLevel      Int        @default(1)      // Рівень кліку (сила тапу)
+  energy          Int        @default(100)    // Поточна енергія
+  maxEnergy       Int        @default(100)    // Максимальна енергія
+  lastBonusDate   DateTime?                   // Дата останнього отриманого бонусу
+  
+  // Реферальна система
+  referrals       User[]     @relation("UserReferrals")
+  referrer        User?      @relation("UserReferrals", fields: [referrerId], references: [id])
+  referrerId      String?
+  
+  tasks           UserTask[]
+  createdAt       DateTime   @default(now())
 }
 
 // Модель Завдання
@@ -43,6 +52,5 @@ model UserTask {
   status    String   @default("COMPLETED")
   createdAt DateTime @default(now())
 
-  // Додаємо індекс для прискорення пошуку останнього виконання завдання
   @@index([userId, taskId, createdAt])
 }
