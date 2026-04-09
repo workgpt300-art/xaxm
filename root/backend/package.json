@@ -1,19 +1,22 @@
 {
   "name": "earning-platform-backend",
   "version": "1.0.0",
-  "type": "module",
-  "main": "server.js",
+  "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "postinstall": "prisma generate"
+    "dev": "nodemon server.js"
+  },
+  "prisma": {
+    "seed": "node seed.js"
   },
   "dependencies": {
     "@prisma/client": "^5.0.0",
+    "axios": "^1.4.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.0",
-    "express": "^4.18.0",
-    "jsonwebtoken": "^9.0.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.1",
     "prisma": "^5.0.0"
   }
 }
