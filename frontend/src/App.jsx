@@ -5,24 +5,24 @@ const API_URL = 'https://xaxm-backend.onrender.com';
 
 const translations = {
   UA: {
-    mine: "МАЙНІНГ", tasks: "ЗАВДАННЯ", profile: "ПРОФІЛЬ",
+    mine: "МАЙНІНГ", tasks: "ЗАВДАННЯ", profile: "ПРОФІЛЬ", partners: "ПАРТНЕРИ",
     balance: "Загальний баланс", energy: "ЕНЕРГІЯ",
     bonus: "Щоденний бонус", tg_task: "Підписка на Telegram",
     claim: "Отримати $50", go: "Перейти", logout: "Вийти",
     loading: "Завантаження...", settings: "Налаштування профілю",
     level: "Рівень", upgrades: "ПОКРАЩЕННЯ",
     up_click: "Сила кліку", up_energy: "Ліміт енергії",
-    buy: "Купити", cost: "Ціна"
+    buy: "Купити", cost: "Ціна", ref_link: "Твоє посилання", copy: "Копіювати"
   },
   ENG: {
-    mine: "MINING", tasks: "TASKS", profile: "PROFILE",
+    mine: "MINING", tasks: "TASKS", profile: "PROFILE", partners: "PARTNERS",
     balance: "Total Balance", energy: "ENERGY",
     bonus: "Daily Bonus", tg_task: "Telegram Subscription",
     claim: "Claim $50", go: "Go", logout: "Log Out",
     loading: "Loading...", settings: "User Settings",
     level: "Level", upgrades: "UPGRADES",
     up_click: "Tap Power", up_energy: "Energy Limit",
-    buy: "Upgrade", cost: "Cost"
+    buy: "Upgrade", cost: "Cost", ref_link: "Your referral link", copy: "Copy"
   }
 };
 
@@ -53,16 +53,13 @@ function App() {
     if (token) fetchData();
   }, [token]);
 
-  // ЕФЕКТ ВІДНОВЛЕННЯ ЕНЕРГІЇ (Client-side tick)
+  // Відновлення енергії
   useEffect(() => {
     const interval = setInterval(() => {
       setUser(prev => {
         if (!prev || prev.energy >= prev.maxEnergy) return prev;
-        const recoveryRate = prev.maxEnergy / (150 * 60); // 150 хв до макс
-        return {
-          ...prev,
-          energy: Math.min(prev.maxEnergy, prev.energy + recoveryRate)
-        };
+        const recoveryRate = prev.maxEnergy / (150 * 60);
+        return { ...prev, energy: Math.min(prev.maxEnergy, prev.energy + recoveryRate) };
       });
     }, 1000);
     return () => clearInterval(interval);
@@ -72,7 +69,11 @@ function App() {
     e.preventDefault();
     const path = isRegister ? '/api/auth/register' : '/api/auth/login';
     try {
-      const res = await axios.post(`${API_URL}${path}`, { email, password });
+      // При реєстрації тепер можна автоматично підтягувати ref з URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const referrerId = urlParams.get('ref');
+      
+      const res = await axios.post(`${API_URL}${path}`, { email, password, referrerId });
       if (isRegister) { 
         alert("Успіх! Тепер увійдіть."); 
         setIsRegister(false); 
@@ -92,42 +93,30 @@ function App() {
 
   const handleTap = async () => {
     if (!user || user.energy < 1) return;
-    
-    // Оптимістичне оновлення (миттєво для юзера)
     const reward = (user.clickLevel || 1) * 0.01;
     setUser(prev => ({
       ...prev,
       balance: prev.balance + reward,
       energy: Math.max(0, prev.energy - 1)
     }));
-
     try {
       const res = await axios.post(`${API_URL}/api/user/tap`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Синхронізація з точними даними сервера
       setUser(prev => ({ ...prev, balance: res.data.balance, energy: res.data.energy }));
     } catch (err) { console.error(err); }
   };
 
-  const handleTgTask = () => {
-    window.open('https://t.me/earnIO_News', '_blank');
-    setTimeout(async () => {
-      try {
-        await axios.post(`${API_URL}/api/tasks/complete`, { taskId: 'tg_sub' }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        alert(lang === 'UA' ? "Нагороду нараховано!" : "Reward claimed!");
-        fetchData();
-      } catch (err) { alert(err.response?.data?.error || "Error"); }
-    }, 3000);
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    alert(lang === 'UA' ? "Скопійовано!" : "Copied!");
   };
 
   if (!token) {
     return (
       <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
         <div className="w-full max-w-md bg-gray-900 border border-purple-500 rounded-3xl p-8 shadow-[0_0_30px_rgba(168,85,247,0.2)]">
-          <h2 className="text-3xl font-black text-center mb-6">{isRegister ? 'JOIN EARN.IO' : 'WELCOME BACK'}</h2>
+          <h2 className="text-3xl font-black text-center mb-6">{isRegister ? 'JOIN XAXM' : 'WELCOME BACK'}</h2>
           <form onSubmit={handleAuth} className="space-y-4">
             <input type="email" placeholder="Email" className="w-full p-4 bg-gray-800 rounded-2xl outline-none border border-transparent focus:border-purple-500 transition-all" value={email} onChange={(e) => setEmail(e.target.value)} />
             <input type="password" placeholder="Password" className="w-full p-4 bg-gray-800 rounded-2xl outline-none border border-transparent focus:border-purple-500 transition-all" value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -144,11 +133,11 @@ function App() {
   if (!user) return <div className="min-h-screen bg-black text-white flex items-center justify-center font-bold tracking-widest animate-pulse">{t.loading}</div>;
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col pb-24 select-none">
+    <div className="min-h-screen bg-black text-white flex flex-col pb-24 select-none font-sans">
       {/* HEADER */}
-      <div className="p-4 flex justify-between items-center border-b border-gray-800 bg-gray-900/50 sticky top-0 z-50 backdrop-blur-md">
-        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('profile')}>
-          <div className="w-10 h-10 bg-gradient-to-tr from-purple-600 to-blue-500 rounded-full flex items-center justify-center font-bold border-2 border-white/20 shadow-lg">
+      <div className="p-4 flex justify-between items-center border-b border-white/5 bg-gray-900/50 sticky top-0 z-50 backdrop-blur-md">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-tr from-purple-600 to-blue-500 rounded-full flex items-center justify-center font-bold border border-white/10 shadow-lg">
             {user.email[0].toUpperCase()}
           </div>
           <div>
@@ -156,96 +145,88 @@ function App() {
             <p className="text-sm font-bold truncate w-24">{user.email.split('@')[0]}</p>
           </div>
         </div>
-
-        <div className="flex items-center gap-1 bg-gray-800 p-1 rounded-full border border-gray-700 shadow-inner">
-           <button onClick={() => setLang('UA')} className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'UA' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500'}`}>UA</button>
-           <button onClick={() => setLang('ENG')} className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'ENG' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500'}`}>ENG</button>
+        <div className="flex bg-gray-800 p-1 rounded-full border border-gray-700">
+           <button onClick={() => setLang('UA')} className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'UA' ? 'bg-purple-600 text-white' : 'text-gray-500'}`}>UA</button>
+           <button onClick={() => setLang('ENG')} className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'ENG' ? 'bg-purple-600 text-white' : 'text-gray-500'}`}>ENG</button>
         </div>
       </div>
 
-      {/* CONTENT */}
-      <main className="flex-1 overflow-y-auto p-6">
+      {/* MAIN CONTENT */}
+      <main className="flex-1 overflow-y-auto p-6 max-w-2xl mx-auto w-full">
+        
         {activeTab === 'miner' && (
-          <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
+          <div className="flex flex-col items-center animate-in fade-in duration-500">
              <div className="text-center mb-10">
-                <p className="text-gray-400 uppercase text-[10px] font-black tracking-[0.2em] mb-1">{t.balance}</p>
-                <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500 drop-shadow-2xl">
-                  ${user.balance.toFixed(3)}
-                </h1>
+                <p className="text-gray-500 uppercase text-[10px] font-black tracking-widest mb-1">{t.balance}</p>
+                <h1 className="text-6xl font-black tracking-tighter">${user.balance.toFixed(3)}</h1>
              </div>
 
-             <button onClick={handleTap} className="relative active:scale-90 transition-transform duration-75 group">
-                <div className="absolute inset-0 bg-purple-600 rounded-full blur-[80px] opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                <div className="w-72 h-72 bg-gradient-to-b from-gray-800 to-gray-900 rounded-full border-[12px] border-gray-800 flex items-center justify-center shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden relative">
-                   <span className="text-9xl select-none z-10 group-active:rotate-12 transition-transform">💎</span>
-                   <div className="absolute inset-0 bg-gradient-to-tr from-purple-500/10 to-transparent"></div>
+             <button onClick={handleTap} className="relative active:scale-95 transition-transform group">
+                <div className="absolute inset-0 bg-purple-600 rounded-full blur-[100px] opacity-20"></div>
+                <div className="w-72 h-72 bg-gray-900 rounded-full border-[16px] border-gray-800 flex items-center justify-center shadow-2xl relative z-10">
+                   <span className="text-9xl group-active:scale-110 transition-transform">💎</span>
                 </div>
              </button>
 
-             <div className="w-full max-w-xs mt-14">
-                <div className="flex justify-between text-[10px] font-black mb-2 px-1 tracking-wider">
-                   <span className="text-purple-400">⚡ {t.energy}</span>
-                   <span>{Math.floor(user.energy)} / {user.maxEnergy}</span>
+             <div className="w-full max-w-xs mt-12">
+                <div className="flex justify-between text-[10px] font-black mb-2 uppercase text-gray-400 px-1">
+                   <span>⚡ {t.energy}</span>
+                   <span className="text-white">{Math.floor(user.energy)} / {user.maxEnergy}</span>
                 </div>
-                <div className="h-4 bg-gray-900 rounded-full border border-gray-800 p-1 shadow-inner">
-                   <div className="h-full bg-gradient-to-r from-purple-600 via-purple-400 to-blue-400 rounded-full transition-all duration-1000 ease-linear" style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}></div>
+                <div className="h-3 bg-gray-900 rounded-full overflow-hidden border border-white/5">
+                   <div className="h-full bg-gradient-to-r from-purple-600 to-blue-400 transition-all duration-300" style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}></div>
                 </div>
              </div>
           </div>
         )}
 
-        {activeTab === 'tasks' && (
-          <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
-            {/* UPGRADES SECTION */}
-            <h2 className="text-xl font-black tracking-tight text-purple-400 uppercase">{t.upgrades}</h2>
-            <div className="grid grid-cols-2 gap-3">
-               <div className="bg-gray-900/80 p-4 rounded-3xl border border-gray-800 flex flex-col items-center">
-                  <span className="text-2xl mb-2">☝️</span>
-                  <p className="text-[10px] font-black text-gray-400 uppercase">{t.up_click}</p>
-                  <p className="font-bold text-sm mb-3">+$0.01 / {t.buy}</p>
-                  <button onClick={() => alert('Soon: Upgrade Tap')} className="w-full py-2 bg-gray-800 rounded-xl text-[10px] font-black hover:bg-purple-600 transition-colors">
-                    $5.00
-                  </button>
-               </div>
-               <div className="bg-gray-900/80 p-4 rounded-3xl border border-gray-800 flex flex-col items-center">
-                  <span className="text-2xl mb-2">🔋</span>
-                  <p className="text-[10px] font-black text-gray-400 uppercase">{t.up_energy}</p>
-                  <p className="font-bold text-sm mb-3">+500 Max</p>
-                  <button onClick={() => alert('Soon: Upgrade Energy')} className="w-full py-2 bg-gray-800 rounded-xl text-[10px] font-black hover:bg-blue-600 transition-colors">
-                    $3.00
-                  </button>
-               </div>
+        {activeTab === 'partners' && (
+          <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
+            <h2 className="text-2xl font-black uppercase text-purple-400">{t.partners}</h2>
+            
+            <div className="bg-gray-900 p-6 rounded-[2rem] border border-white/5">
+              <p className="text-[10px] font-black text-gray-500 uppercase mb-3">{t.ref_link}</p>
+              <div className="flex gap-2">
+                <input 
+                  readOnly 
+                  className="flex-1 bg-black p-3 rounded-xl text-xs border border-white/5 outline-none"
+                  value={`${window.location.origin}?ref=${user.id}`}
+                />
+                <button 
+                  onClick={() => copyToClipboard(`${window.location.origin}?ref=${user.id}`)}
+                  className="bg-purple-600 px-4 rounded-xl text-[10px] font-black uppercase hover:bg-purple-500 transition-colors"
+                >
+                  {t.copy}
+                </button>
+              </div>
             </div>
 
-            <h2 className="text-xl font-black tracking-tight text-purple-400 uppercase mt-8">{t.tasks}</h2>
-            <div className="bg-gray-900/50 p-5 rounded-[2rem] border border-gray-800 flex justify-between items-center backdrop-blur-sm group hover:border-purple-500/50 transition-colors">
-               <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-2xl">✈️</div>
-                  <div>
-                    <p className="font-bold text-sm">{t.tg_task}</p>
-                    <p className="text-xs text-green-400 font-black">+$50.00</p>
-                  </div>
-               </div>
-               <button onClick={handleTgTask} className="bg-purple-600 px-5 py-2 rounded-xl text-xs font-black shadow-lg shadow-purple-600/20 hover:bg-purple-500 transition-colors">
-                 {t.go}
-               </button>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gray-900 p-5 rounded-3xl border border-white/5 text-center">
+                <p className="text-[10px] font-black text-gray-500 uppercase">Total Refs</p>
+                <p className="text-2xl font-black mt-1">{user.referrals?.length || 0}</p>
+              </div>
+              <div className="bg-gray-900 p-5 rounded-3xl border border-white/5 text-center">
+                <p className="text-[10px] font-black text-gray-500 uppercase">Earned from refs</p>
+                <p className="text-2xl font-black mt-1 text-green-400">$0.00</p>
+              </div>
             </div>
           </div>
         )}
 
         {activeTab === 'profile' && (
-          <div className="bg-gray-900/50 rounded-[2.5rem] p-8 border border-gray-800 animate-in slide-in-from-right-4 duration-300">
-            <h2 className="text-xl font-black mb-8 text-center uppercase tracking-widest text-purple-400">{t.settings}</h2>
+          <div className="bg-gray-900 rounded-[2rem] p-8 border border-white/5">
+            <h2 className="text-xl font-black mb-8 uppercase text-center text-purple-400">{t.settings}</h2>
             <div className="space-y-6">
-               <div className="flex flex-col gap-1">
-                  <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Email Address</span>
-                  <span className="text-md font-bold text-gray-200">{user.email}</span>
+               <div className="flex justify-between items-center border-b border-white/5 pb-4">
+                  <span className="text-[10px] font-black text-gray-500 uppercase">Email</span>
+                  <span className="font-bold text-sm">{user.email}</span>
                </div>
-               <div className="flex flex-col gap-1 border-t border-gray-800 pt-4">
-                  <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Mining Level</span>
-                  <span className="text-md font-bold text-purple-400">{user.clickLevel} LVL</span>
+               <div className="flex justify-between items-center border-b border-white/5 pb-4">
+                  <span className="text-[10px] font-black text-gray-500 uppercase">User ID</span>
+                  <span className="font-mono text-[10px] text-gray-400">{user.id}</span>
                </div>
-               <button onClick={handleLogout} className="w-full py-4 mt-8 bg-red-500/10 text-red-500 rounded-2xl font-black text-xs border border-red-500/20 hover:bg-red-500/20 transition-all">
+               <button onClick={handleLogout} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-black text-[10px] uppercase border border-red-500/20 hover:bg-red-500 transition-colors">
                   {t.logout}
                </button>
             </div>
@@ -253,20 +234,23 @@ function App() {
         )}
       </main>
 
-      {/* BOTTOM NAVIGATION */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900/80 border-t border-white/5 p-4 flex justify-around items-center backdrop-blur-xl z-50">
-        <button onClick={() => setActiveTab('miner')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'miner' ? 'text-purple-500 scale-110' : 'text-gray-500 opacity-50'}`}>
-          <span className="text-2xl">⛏️</span>
-          <span className="text-[9px] font-black tracking-tighter">{t.mine}</span>
-        </button>
-        <button onClick={() => setActiveTab('tasks')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'tasks' ? 'text-purple-500 scale-110' : 'text-gray-500 opacity-50'}`}>
-          <span className="text-2xl">⚡</span>
-          <span className="text-[9px] font-black tracking-tighter">{t.upgrades}</span>
-        </button>
-        <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-purple-500 scale-110' : 'text-gray-500 opacity-50'}`}>
-          <span className="text-2xl">👤</span>
-          <span className="text-[9px] font-black tracking-tighter">{t.profile}</span>
-        </button>
+      {/* NAVIGATION */}
+      <nav className="fixed bottom-6 left-6 right-6 bg-gray-900/90 border border-white/5 h-20 rounded-3xl flex justify-around items-center backdrop-blur-xl z-50 px-2 shadow-2xl">
+        {[
+          { id: 'miner', label: t.mine, icon: '⛏️' },
+          { id: 'partners', label: t.partners, icon: '👥' },
+          { id: 'tasks', label: t.tasks, icon: '⚡' },
+          { id: 'profile', label: t.profile, icon: '👤' }
+        ].map((tab) => (
+          <button 
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)} 
+            className={`flex flex-col items-center gap-1 flex-1 py-2 rounded-2xl transition-all ${activeTab === tab.id ? 'bg-purple-600/20 text-purple-400 scale-105' : 'text-gray-500 opacity-60'}`}
+          >
+            <span className="text-xl">{tab.icon}</span>
+            <span className="text-[8px] font-black uppercase tracking-tighter">{tab.label}</span>
+          </button>
+        ))}
       </nav>
     </div>
   );
