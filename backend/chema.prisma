@@ -1,0 +1,45 @@
+// Налаштування клієнта (генератор коду)
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Підключення до бази (бере дані з нашого .env)
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Модель Користувача
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  balance   Float    @default(0.0) // Початковий баланс 0
+  role      String   @default("USER") // USER або ADMIN
+  referrals User[]   @relation("UserReferrals") // Система рефералів
+  referrer  User?    @relation("UserReferrals", fields: [referrerId], references: [id])
+  referrerId String?
+  tasks     UserTask[]
+  createdAt DateTime @default(now())
+}
+
+// Модель Завдання
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String
+  reward      Float      // Скільки платимо за виконання
+  category    String     // наприклад: "Youtube", "Telegram"
+  users       UserTask[]
+}
+
+// Зв'язок між користувачем і завданням (хто що виконав)
+model UserTask {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  task      Task     @relation(fields: [taskId], references: [id])
+  taskId    String
+  status    String   @default("COMPLETED") // Стан виконання
+  createdAt DateTime @default(now())
+}
