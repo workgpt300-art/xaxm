@@ -3,39 +3,26 @@ import axios from 'axios';
 
 const API_URL = 'https://xaxm-backend.onrender.com';
 
-// Об'єкт перекладів
 const translations = {
   UA: {
-    mine: "МАЙНІНГ",
-    tasks: "ЗАВДАННЯ",
-    profile: "ПРОФІЛЬ",
-    balance: "Загальний баланс",
-    energy: "ЕНЕРГІЯ",
-    bonus: "Щоденний бонус",
-    tg_task: "Підписка на Telegram",
-    tg_desc: "Підпишись на @earnIO_News",
-    claim: "Отримати $50",
-    go: "Перейти",
-    logout: "Вийти",
-    loading: "Завантаження...",
-    settings: "Налаштування профілю",
-    level: "Рівень"
+    mine: "МАЙНІНГ", tasks: "ЗАВДАННЯ", profile: "ПРОФІЛЬ",
+    balance: "Загальний баланс", energy: "ЕНЕРГІЯ",
+    bonus: "Щоденний бонус", tg_task: "Підписка на Telegram",
+    claim: "Отримати $50", go: "Перейти", logout: "Вийти",
+    loading: "Завантаження...", settings: "Налаштування профілю",
+    level: "Рівень", upgrades: "ПОКРАЩЕННЯ",
+    up_click: "Сила кліку", up_energy: "Ліміт енергії",
+    buy: "Купити", cost: "Ціна"
   },
   ENG: {
-    mine: "MINING",
-    tasks: "TASKS",
-    profile: "PROFILE",
-    balance: "Total Balance",
-    energy: "ENERGY",
-    bonus: "Daily Bonus",
-    tg_task: "Telegram Subscription",
-    tg_desc: "Subscribe to @earnIO_News",
-    claim: "Claim $50",
-    go: "Go",
-    logout: "Log Out",
-    loading: "Loading...",
-    settings: "User Settings",
-    level: "Level"
+    mine: "MINING", tasks: "TASKS", profile: "PROFILE",
+    balance: "Total Balance", energy: "ENERGY",
+    bonus: "Daily Bonus", tg_task: "Telegram Subscription",
+    claim: "Claim $50", go: "Go", logout: "Log Out",
+    loading: "Loading...", settings: "User Settings",
+    level: "Level", upgrades: "UPGRADES",
+    up_click: "Tap Power", up_energy: "Energy Limit",
+    buy: "Upgrade", cost: "Cost"
   }
 };
 
@@ -43,13 +30,14 @@ function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState('miner');
-  const [lang, setLang] = useState('UA'); // Стейт мови
+  const [lang, setLang] = useState('UA');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isRegister, setIsRegister] = useState(false);
 
   const t = translations[lang];
 
+  // Завантаження даних
   const fetchData = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/me`, {
@@ -65,6 +53,21 @@ function App() {
     if (token) fetchData();
   }, [token]);
 
+  // ЕФЕКТ ВІДНОВЛЕННЯ ЕНЕРГІЇ (Client-side tick)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setUser(prev => {
+        if (!prev || prev.energy >= prev.maxEnergy) return prev;
+        const recoveryRate = prev.maxEnergy / (150 * 60); // 150 хв до макс
+        return {
+          ...prev,
+          energy: Math.min(prev.maxEnergy, prev.energy + recoveryRate)
+        };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   const handleAuth = async (e) => {
     e.preventDefault();
     const path = isRegister ? '/api/auth/register' : '/api/auth/login';
@@ -78,9 +81,7 @@ function App() {
         setToken(res.data.token);
         setUser(res.data.user);
       }
-    } catch (err) { 
-      alert(err.response?.data?.error || "Помилка"); 
-    }
+    } catch (err) { alert(err.response?.data?.error || "Помилка"); }
   };
 
   const handleLogout = () => {
@@ -90,20 +91,27 @@ function App() {
   };
 
   const handleTap = async () => {
-    if (!user || user.energy <= 0) return;
+    if (!user || user.energy < 1) return;
+    
+    // Оптимістичне оновлення (миттєво для юзера)
+    const reward = (user.clickLevel || 1) * 0.01;
+    setUser(prev => ({
+      ...prev,
+      balance: prev.balance + reward,
+      energy: Math.max(0, prev.energy - 1)
+    }));
+
     try {
       const res = await axios.post(`${API_URL}/api/user/tap`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      // Синхронізація з точними даними сервера
       setUser(prev => ({ ...prev, balance: res.data.balance, energy: res.data.energy }));
     } catch (err) { console.error(err); }
   };
 
-  // Логіка Telegram завдання
   const handleTgTask = () => {
     window.open('https://t.me/earnIO_News', '_blank');
-    
-    // Затримка перед запитом на бекенд, щоб імітувати перевірку
     setTimeout(async () => {
       try {
         await axios.post(`${API_URL}/api/tasks/complete`, { taskId: 'tg_sub' }, {
@@ -111,9 +119,7 @@ function App() {
         });
         alert(lang === 'UA' ? "Нагороду нараховано!" : "Reward claimed!");
         fetchData();
-      } catch (err) {
-        alert(err.response?.data?.error || "Error");
-      }
+      } catch (err) { alert(err.response?.data?.error || "Error"); }
     }, 3000);
   };
 
@@ -151,16 +157,9 @@ function App() {
           </div>
         </div>
 
-        {/* ПЕРЕМИКАЧ МОВИ */}
         <div className="flex items-center gap-1 bg-gray-800 p-1 rounded-full border border-gray-700 shadow-inner">
-           <button 
-             onClick={() => setLang('UA')} 
-             className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'UA' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500'}`}
-           >UA</button>
-           <button 
-             onClick={() => setLang('ENG')} 
-             className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'ENG' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500'}`}
-           >ENG</button>
+           <button onClick={() => setLang('UA')} className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'UA' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500'}`}>UA</button>
+           <button onClick={() => setLang('ENG')} className={`px-3 py-1 rounded-full text-[10px] font-black transition-all ${lang === 'ENG' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-500'}`}>ENG</button>
         </div>
       </div>
 
@@ -186,21 +185,39 @@ function App() {
              <div className="w-full max-w-xs mt-14">
                 <div className="flex justify-between text-[10px] font-black mb-2 px-1 tracking-wider">
                    <span className="text-purple-400">⚡ {t.energy}</span>
-                   <span>{user.energy} / {user.maxEnergy}</span>
+                   <span>{Math.floor(user.energy)} / {user.maxEnergy}</span>
                 </div>
                 <div className="h-4 bg-gray-900 rounded-full border border-gray-800 p-1 shadow-inner">
-                   <div 
-                    className="h-full bg-gradient-to-r from-purple-600 via-purple-400 to-blue-400 rounded-full transition-all duration-500" 
-                    style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}
-                   ></div>
+                   <div className="h-full bg-gradient-to-r from-purple-600 via-purple-400 to-blue-400 rounded-full transition-all duration-1000 ease-linear" style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}></div>
                 </div>
              </div>
           </div>
         )}
 
         {activeTab === 'tasks' && (
-          <div className="space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-            <h2 className="text-2xl font-black mb-6 tracking-tight">{t.tasks}</h2>
+          <div className="space-y-6 animate-in slide-in-from-bottom-4 duration-300">
+            {/* UPGRADES SECTION */}
+            <h2 className="text-xl font-black tracking-tight text-purple-400 uppercase">{t.upgrades}</h2>
+            <div className="grid grid-cols-2 gap-3">
+               <div className="bg-gray-900/80 p-4 rounded-3xl border border-gray-800 flex flex-col items-center">
+                  <span className="text-2xl mb-2">☝️</span>
+                  <p className="text-[10px] font-black text-gray-400 uppercase">{t.up_click}</p>
+                  <p className="font-bold text-sm mb-3">+$0.01 / {t.buy}</p>
+                  <button onClick={() => alert('Soon: Upgrade Tap')} className="w-full py-2 bg-gray-800 rounded-xl text-[10px] font-black hover:bg-purple-600 transition-colors">
+                    $5.00
+                  </button>
+               </div>
+               <div className="bg-gray-900/80 p-4 rounded-3xl border border-gray-800 flex flex-col items-center">
+                  <span className="text-2xl mb-2">🔋</span>
+                  <p className="text-[10px] font-black text-gray-400 uppercase">{t.up_energy}</p>
+                  <p className="font-bold text-sm mb-3">+500 Max</p>
+                  <button onClick={() => alert('Soon: Upgrade Energy')} className="w-full py-2 bg-gray-800 rounded-xl text-[10px] font-black hover:bg-blue-600 transition-colors">
+                    $3.00
+                  </button>
+               </div>
+            </div>
+
+            <h2 className="text-xl font-black tracking-tight text-purple-400 uppercase mt-8">{t.tasks}</h2>
             <div className="bg-gray-900/50 p-5 rounded-[2rem] border border-gray-800 flex justify-between items-center backdrop-blur-sm group hover:border-purple-500/50 transition-colors">
                <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-2xl">✈️</div>
@@ -243,8 +260,8 @@ function App() {
           <span className="text-[9px] font-black tracking-tighter">{t.mine}</span>
         </button>
         <button onClick={() => setActiveTab('tasks')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'tasks' ? 'text-purple-500 scale-110' : 'text-gray-500 opacity-50'}`}>
-          <span className="text-2xl">📋</span>
-          <span className="text-[9px] font-black tracking-tighter">{t.tasks}</span>
+          <span className="text-2xl">⚡</span>
+          <span className="text-[9px] font-black tracking-tighter">{t.upgrades}</span>
         </button>
         <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-purple-500 scale-110' : 'text-gray-500 opacity-50'}`}>
           <span className="text-2xl">👤</span>
