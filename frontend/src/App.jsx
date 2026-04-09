@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-// Вкажи тут адресу свого бекенду на Render без "/" в кінці
 const API_URL = 'https://xaxm-backend.onrender.com';
 
 function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
+  const [activeTab, setActiveTab] = useState('miner'); // 'miner', 'tasks', 'profile'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isRegister, setIsRegister] = useState(false);
-  const [loading, setLoading] = useState(false);
 
-  // 1. Завантаження даних профілю
+  // Завантаження даних
   const fetchData = async () => {
     try {
       const res = await axios.get(`${API_URL}/api/me`, {
@@ -20,39 +19,26 @@ function App() {
       });
       setUser(res.data);
     } catch (err) {
-      console.error("Помилка завантаження профілю:", err);
-      if (err.response?.status === 401 || err.response?.status === 403) {
-        handleLogout();
-      }
+      if (err.response?.status === 401) handleLogout();
     }
   };
 
   useEffect(() => {
-    if (token) {
-      fetchData();
-    }
+    if (token) fetchData();
   }, [token]);
 
-  // 2. Вхід / Реєстрація
   const handleAuth = async (e) => {
     e.preventDefault();
-    setLoading(true);
     const path = isRegister ? '/api/auth/register' : '/api/auth/login';
     try {
       const res = await axios.post(`${API_URL}${path}`, { email, password });
-      if (isRegister) {
-        alert("Реєстрація успішна! Тепер увійдіть.");
-        setIsRegister(false);
-      } else {
+      if (isRegister) { alert("Успіх! Увійдіть."); setIsRegister(false); }
+      else {
         localStorage.setItem('token', res.data.token);
         setToken(res.data.token);
         setUser(res.data.user);
       }
-    } catch (err) {
-      alert(err.response?.data?.error || "Помилка авторизації");
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { alert(err.response?.data?.error || "Помилка"); }
   };
 
   const handleLogout = () => {
@@ -61,118 +47,134 @@ function App() {
     setUser(null);
   };
 
-  // 3. Клік (Tap)
   const handleTap = async () => {
-    if (!user) return;
+    if (!user || user.energy <= 0) return;
     try {
       const res = await axios.post(`${API_URL}/api/user/tap`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUser(prev => ({ ...prev, balance: res.data.balance, energy: res.data.energy }));
-    } catch (err) {
-      alert(err.response?.data?.error || "Помилка кліку");
-    }
+    } catch (err) { console.error(err); }
   };
 
-  // 4. Отримання бонусу
-  const handleBonus = async () => {
-    try {
-      const res = await axios.post(`${API_URL}/api/user/bonus`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      alert(res.data.message);
-      fetchData(); // Оновлюємо дані
-    } catch (err) {
-      alert(err.response?.data?.error || "Бонус ще не доступний");
-    }
-  };
-
-  // ЯКЩО НЕМАЄ ТОКЕНА — ПОКАЗУЄМО ВІКНО ЛОГІНУ (Це фіксить білий екран)
   if (!token) {
     return (
-      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4">
-        <div className="bg-gray-900 p-8 rounded-2xl shadow-xl w-full max-w-md border border-purple-500">
-          <h2 className="text-3xl font-bold mb-6 text-center text-purple-400">
-            {isRegister ? 'Реєстрація' : 'Вхід у EARN.IO'}
-          </h2>
+      <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-gray-900 border border-purple-500 rounded-3xl p-8">
+          <h2 className="text-3xl font-black text-center mb-6">{isRegister ? 'JOIN US' : 'WELCOME BACK'}</h2>
           <form onSubmit={handleAuth} className="space-y-4">
-            <input 
-              type="email" placeholder="Email" 
-              className="w-full p-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-purple-500 outline-none"
-              value={email} onChange={(e) => setEmail(e.target.value)} required
-            />
-            <input 
-              type="password" placeholder="Пароль" 
-              className="w-full p-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-purple-500 outline-none"
-              value={password} onChange={(e) => setPassword(e.target.value)} required
-            />
-            <button className="w-full bg-purple-600 hover:bg-purple-700 p-3 rounded-lg font-bold transition">
-              {loading ? 'Зачекайте...' : (isRegister ? 'Створити акаунт' : 'Увійти')}
-            </button>
+            <input type="email" placeholder="Email" className="w-full p-4 bg-gray-800 rounded-2xl outline-none border border-transparent focus:border-purple-500" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input type="password" placeholder="Password" className="w-full p-4 bg-gray-800 rounded-2xl outline-none border border-transparent focus:border-purple-500" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <button className="w-full py-4 bg-purple-600 rounded-2xl font-bold text-lg hover:bg-purple-500 transition">{isRegister ? 'Sign Up' : 'Login'}</button>
           </form>
-          <p className="mt-4 text-center text-gray-400 cursor-pointer hover:text-white" onClick={() => setIsRegister(!isRegister)}>
-            {isRegister ? 'Вже є акаунт? Увійдіть' : 'Немає акаунту? Реєстрація'}
+          <p className="text-center mt-6 text-gray-400" onClick={() => setIsRegister(!isRegister)}>
+            {isRegister ? 'Already have an account? Login' : 'New here? Create account'}
           </p>
         </div>
       </div>
     );
   }
 
-  // ЯКЩО ТОКЕН Є, АЛЕ ЮЗЕР ЩЕ ВАНТАЖИТЬСЯ
-  if (!user) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Завантаження...</div>;
+  if (!user) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Loading...</div>;
 
-  // ОСНОВНИЙ ІНТЕРФЕЙС ГРИ
   return (
-    <div className="min-h-screen bg-black text-white font-sans">
-      {/* Шапка */}
-      <div className="flex justify-between items-center p-6 bg-gray-900 border-b border-gray-800">
-        <div className="flex items-center gap-2">
-          <div className="bg-purple-600 w-10 h-10 rounded-lg flex items-center justify-center font-bold text-xl">E</div>
-          <span className="text-xl font-black tracking-tighter">EARN.IO</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="bg-gray-800 px-4 py-2 rounded-full font-bold border border-gray-700">
-            ${user.balance?.toFixed(2)}
+    <div className="min-h-screen bg-black text-white flex flex-col pb-24">
+      {/* HEADER */}
+      <div className="p-4 flex justify-between items-center border-b border-gray-800 bg-gray-900/50 sticky top-0 z-50 backdrop-blur-md">
+        <div className="flex items-center gap-3" onClick={() => setActiveTab('profile')}>
+          <div className="w-10 h-10 bg-gradient-to-tr from-purple-600 to-blue-500 rounded-full flex items-center justify-center font-bold border-2 border-white/20">
+            {user.email[0].toUpperCase()}
           </div>
-          <button onClick={handleLogout} className="text-gray-500 hover:text-white">➡</button>
+          <div>
+            <p className="text-xs text-gray-400">Level {user.clickLevel}</p>
+            <p className="text-sm font-bold truncate w-24">{user.email.split('@')[0]}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 bg-gray-800 px-3 py-1 rounded-full border border-gray-700">
+           <span className="text-yellow-400 font-bold">UA</span>
+           <div className="w-[1px] h-4 bg-gray-600 mx-1"></div>
+           <span className="text-sm text-gray-300">ENG</span>
         </div>
       </div>
 
-      {/* Майнер */}
-      <div className="flex flex-col items-center mt-10">
-        <div className="w-full max-w-md px-6">
-          <div className="h-4 bg-gray-800 rounded-full overflow-hidden border border-gray-700 mb-2">
-            <div 
-              className="h-full bg-gradient-to-r from-yellow-400 to-orange-500 transition-all duration-300" 
-              style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}
-            ></div>
-          </div>
-          <p className="text-center text-sm font-bold text-gray-400 uppercase tracking-widest">
-            ⚡ Energy: {user.energy} / {user.maxEnergy}
-          </p>
-        </div>
+      {/* MAIN CONTENT AREA */}
+      <main className="flex-1 overflow-y-auto p-6">
+        {activeTab === 'miner' && (
+          <div className="flex flex-col items-center">
+             <div className="text-center mb-8">
+                <p className="text-gray-400 uppercase text-xs tracking-widest mb-1">Total Balance</p>
+                <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-500">
+                  ${user.balance.toFixed(3)}
+                </h1>
+             </div>
 
-        <button 
-          onClick={handleTap}
-          className="mt-12 relative group active:scale-95 transition-transform"
-        >
-          <div className="absolute inset-0 bg-purple-500 rounded-full blur-3xl opacity-20 group-hover:opacity-40 transition"></div>
-          <div className="relative w-64 h-64 bg-gradient-to-b from-purple-900 to-black rounded-full border-4 border-purple-500 flex items-center justify-center overflow-hidden">
-             <span className="text-8xl select-none">💎</span>
+             <button onClick={handleTap} className="relative active:scale-90 transition-transform duration-75">
+                <div className="absolute inset-0 bg-purple-600 rounded-full blur-[60px] opacity-20"></div>
+                <div className="w-72 h-72 bg-gradient-to-b from-gray-800 to-gray-900 rounded-full border-[10px] border-gray-800 flex items-center justify-center shadow-2xl">
+                   <span className="text-9xl select-none">🪙</span>
+                </div>
+             </button>
+
+             <div className="w-full max-w-xs mt-12">
+                <div className="flex justify-between text-xs font-bold mb-2 px-1">
+                   <span className="text-purple-400">⚡ ENERGY</span>
+                   <span>{user.energy} / {user.maxEnergy}</span>
+                </div>
+                <div className="h-3 bg-gray-800 rounded-full border border-gray-700 overflow-hidden">
+                   <div className="h-full bg-gradient-to-r from-purple-500 to-blue-400 transition-all" style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}></div>
+                </div>
+             </div>
           </div>
+        )}
+
+        {activeTab === 'tasks' && (
+          <div className="space-y-4">
+            <h2 className="text-2xl font-bold mb-6">Available Tasks</h2>
+            <div className="bg-gray-900 p-4 rounded-2xl border border-gray-800 flex justify-between items-center">
+               <div>
+                  <p className="font-bold">Subscribe to Telegram</p>
+                  <p className="text-sm text-green-400">+$50.00</p>
+               </div>
+               <button className="bg-purple-600 px-4 py-2 rounded-xl text-sm font-bold">Go</button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'profile' && (
+          <div className="bg-gray-900 rounded-3xl p-6 border border-gray-800">
+            <h2 className="text-xl font-bold mb-4">User Settings</h2>
+            <div className="space-y-4">
+               <div className="flex justify-between py-3 border-b border-gray-800">
+                  <span className="text-gray-400">Email</span>
+                  <span>{user.email}</span>
+               </div>
+               <div className="flex justify-between py-3 border-b border-gray-800">
+                  <span className="text-gray-400">Click Level</span>
+                  <span>{user.clickLevel}</span>
+               </div>
+               <button onClick={handleLogout} className="w-full py-4 mt-6 bg-red-900/30 text-red-500 rounded-2xl font-bold border border-red-900/50">
+                  Log Out
+               </button>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* BOTTOM TAB BAR */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4 flex justify-around items-center backdrop-blur-lg">
+        <button onClick={() => setActiveTab('miner')} className={`flex flex-col items-center gap-1 ${activeTab === 'miner' ? 'text-purple-500' : 'text-gray-500'}`}>
+          <span className="text-2xl">⛏️</span>
+          <span className="text-[10px] font-bold">MINE</span>
         </button>
-
-        <div className="grid grid-cols-2 gap-4 mt-12 w-full max-w-md px-6">
-          <button onClick={handleBonus} className="bg-gray-900 p-4 rounded-2xl border border-gray-800 hover:border-purple-500 transition">
-            <p className="text-xs text-gray-500 uppercase font-bold">Daily Bonus</p>
-            <p className="font-bold">Отримати $1.00</p>
-          </button>
-          <button className="bg-gray-900 p-4 rounded-2xl border border-gray-800 hover:border-purple-500 transition opacity-50">
-            <p className="text-xs text-gray-500 uppercase font-bold">Upgrade</p>
-            <p className="font-bold">Lvl {user.clickLevel}</p>
-          </button>
-        </div>
-      </div>
+        <button onClick={() => setActiveTab('tasks')} className={`flex flex-col items-center gap-1 ${activeTab === 'tasks' ? 'text-purple-500' : 'text-gray-500'}`}>
+          <span className="text-2xl">📋</span>
+          <span className="text-[10px] font-bold">TASKS</span>
+        </button>
+        <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 ${activeTab === 'profile' ? 'text-purple-500' : 'text-gray-500'}`}>
+          <span className="text-2xl">👤</span>
+          <span className="text-[10px] font-bold">PROFILE</span>
+        </button>
+      </nav>
     </div>
   );
 }
