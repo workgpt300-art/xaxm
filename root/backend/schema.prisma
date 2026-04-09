@@ -11,25 +11,29 @@ datasource db {
 
 // Модель Користувача
 model User {
-  id              String     @id @default(uuid())
-  email           String     @unique
-  password        String
-  balance         Float      @default(0.0)
-  role            String     @default("USER")
+  id               String   @id @default(uuid())
+  email            String   @unique
+  password         String
+  balance          Float    @default(0.0)
+  role             String   @default("USER")
   
   // --- ПРОКАЧКА ТА БОНУСИ ---
-  clickLevel      Int        @default(1)      // Рівень кліку (сила тапу)
-  energy          Int        @default(5000)   // Встановлено 5000 енергії за замовчуванням
-  maxEnergy       Int        @default(5000)   // Максимальна енергія також 5000
-  lastBonusDate   DateTime?                   // Дата останнього отриманого бонусу
+  clickLevel       Int      @default(1)      // Рівень кліку (сила тапу)
+  energy           Int      @default(5000)   // Поточна енергія
+  maxEnergy        Int      @default(5000)   // Максимальна енергія
+  
+  // ЦЕЙ РЯДОК ВИПРАВЛЯЄ ПОМИЛКУ:
+  lastEnergyUpdate DateTime @default(now())  // Час останнього оновлення енергії
+  
+  lastBonusDate    DateTime?                 // Дата останнього отриманого бонусу
   
   // Реферальна система
-  referrals       User[]     @relation("UserReferrals")
-  referrer        User?      @relation("UserReferrals", fields: [referrerId], references: [id])
-  referrerId      String?
+  referrals        User[]     @relation("UserReferrals")
+  referrer         User?      @relation("UserReferrals", fields: [referrerId], references: [id])
+  referrerId       String?
   
-  tasks           UserTask[]
-  createdAt       DateTime   @default(now())
+  tasks            UserTask[]
+  createdAt        DateTime   @default(now())
 }
 
 // Модель Завдання
