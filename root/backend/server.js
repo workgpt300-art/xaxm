@@ -49,13 +49,101 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Отримати профіль (з логікою відновлення енергії)
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) return res.status(404).json({ error: "User not found" });
-    res.json({ id: user.id, email: user.email, balance: user.balance });
+
+    // Проста регенерація енергії: +1 енергія за кожні 60 сек з моменту створення запису (або останнього оновлення)
+    // Для реальної гри краще використовувати `updatedAt`, але поки просто віддаємо як є
+    res.json(user);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+// --- ЛОГІКА МАЙНЕРА ---
+
+// 1. Клік (Tap)
+app.post('/api/user/tap', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    
+    if (user.energy <= 0) {
+      return res.status(400).json({ error: "Немає енергії!" });
+    }
+
+    const reward = user.clickLevel * 0.01; // Заробіток залежить від рівня
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { 
+        balance: { increment: reward },
+        energy: { decrement: 1 }
+      }
+    });
+
+    res.json({ balance: updatedUser.balance, energy: updatedUser.energy, reward });
+  } catch (err) {
+    res.status(500).json({ error: "Tap error" });
+  }
+});
+
+// 2. Апгрейд (Upgrade)
+app.post('/api/user/upgrade', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const cost = user.clickLevel * 5.0; // Ціна: 1lvl-$5, 2lvl-$10...
+
+    if (user.balance < cost) {
+      return res.status(400).json({ error: `Потрібно $${cost.toFixed(2)}` });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { 
+        balance: { decrement: cost },
+        clickLevel: { increment: 1 },
+        maxEnergy: { increment: 50 }, // З кожним рівнем +50 до макс енергії
+        energy: { increment: 50 }
+      }
+    });
+
+    res.json(updatedUser);
+  } catch (err) {
+    res.status(500).json({ error: "Upgrade error" });
+  }
+});
+
+// 3. Щоденний бонус (Daily Bonus)
+app.post('/api/user/bonus', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const now = new Date();
+    
+    if (user.lastBonusDate) {
+      const diff = now.getTime() - new Date(user.lastBonusDate).getTime();
+      if (diff < 24 * 60 * 60 * 1000) {
+        const hoursLeft = Math.ceil((24 * 60 * 60 * 1000 - diff) / (1000 * 60 * 60));
+        return res.status(400).json({ error: `Бонус буде доступний через ${hoursLeft} год.` });
+      }
+    }
+
+    const bonusAmount = 1.0; // Даємо $1.00 щодня
+
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { 
+        balance: { increment: bonusAmount },
+        lastBonusDate: now,
+        energy: user.maxEnergy // Бонус також відновлює енергію
+      }
+    });
+
+    res.json({ message: "Ви отримали щоденний бонус $1.00!", balance: updatedUser.balance });
+  } catch (err) {
+    res.status(500).json({ error: "Bonus error" });
   }
 });
 
