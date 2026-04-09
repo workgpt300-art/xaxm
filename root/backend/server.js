@@ -33,7 +33,9 @@ app.post('/api/auth/register', async (req, res) => {
       data: { email, password: hashedPassword }
     });
     res.json({ message: "User created", userId: user.id });
-  } catch (e) { res.status(400).json({ error: "Email already exists" }); }
+  } catch (e) { 
+    res.status(400).json({ error: "Email already exists" }); 
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -47,27 +49,32 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// Роут для автоматичного входу (запам'ятовування)
 app.get('/api/me', authenticateToken, async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-  if (!user) return res.status(404).json({ error: "User not found" });
-  res.json({ id: user.id, email: user.email, balance: user.balance });
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ id: user.id, email: user.email, balance: user.balance });
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // --- ЛОГІКА ЗАВДАНЬ ---
-
 app.get('/api/tasks', async (req, res) => {
-  const tasks = await prisma.task.findMany();
-  res.json(tasks);
+  try {
+    const tasks = await prisma.task.findMany();
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch tasks" });
+  }
 });
 
 app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
   const { taskId } = req.body;
   const userId = req.user.id;
-  const THIRTY_HOURS = 30 * 60 * 60 * 1000; // 30 годин
+  const THIRTY_HOURS = 30 * 60 * 60 * 1000;
 
   try {
-    // 1. Перевіряємо останнє виконання
     const lastExecution = await prisma.userTask.findFirst({
       where: { userId, taskId },
       orderBy: { createdAt: 'desc' }
@@ -84,7 +91,6 @@ app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
     const task = await prisma.task.findUnique({ where: { id: taskId } });
     if (!task) return res.status(404).json({ error: "Task not found" });
 
-    // 2. Виконуємо транзакцію: гроші + запис часу
     const [updatedUser] = await prisma.$transaction([
       prisma.user.update({
         where: { id: userId },
@@ -96,19 +102,13 @@ app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
     ]);
 
     res.json({ 
-      message: "Завдання виконано!", 
+      message: "Success", 
       newBalance: updatedUser.balance,
       reward: task.reward 
     });
-
   } catch (err) {
-    res.status(500).json({ error: "Помилка сервера" });
+    res.status(500).json({ error: "Transaction failed" });
   }
-});
-
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-  res.json({ message: "Task completed!", newBalance: updatedUser.balance });
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
