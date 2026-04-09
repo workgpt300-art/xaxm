@@ -5,8 +5,17 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Starting seed...');
 
-  // Очищаємо старі завдання, щоб уникнути дублікатів
-  await prisma.task.deleteMany({});
+  try {
+    // Використовуємо TRUNCATE з CASCADE — це видалить дані з обох таблиць 
+    // і ігноруватиме помилки зв'язків (Foreign Keys)
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE "UserTask", "Task" RESTART IDENTITY CASCADE;`);
+    console.log('Tables cleared successfully.');
+  } catch (error) {
+    console.log('Truncate failed, trying manual delete...');
+    // Запасний варіант, якщо TRUNCATE не спрацює
+    await prisma.userTask.deleteMany({});
+    await prisma.task.deleteMany({});
+  }
 
   const tasks = [
     {
@@ -29,6 +38,7 @@ async function main() {
     }
   ];
 
+  console.log('Inserting new tasks...');
   for (const task of tasks) {
     await prisma.task.create({
       data: task,
@@ -44,5 +54,7 @@ main()
     process.exit(1);
   })
   .finally(async () => {
+    await prisma.$disconnect();
+  });
     await prisma.$disconnect();
   });
