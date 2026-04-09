@@ -1,9 +1,9 @@
-// Налаштування клієнта (генератор коду)
+// Налаштування клієнта
 generator client {
   provider = "prisma-client-js"
 }
 
-// Підключення до бази (бере дані з нашого .env)
+// Підключення до бази
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -14,9 +14,9 @@ model User {
   id         String     @id @default(uuid())
   email      String     @unique
   password   String
-  balance    Float      @default(0.0) // Початковий баланс 0
-  role       String     @default("USER") // USER або ADMIN
-  referrals  User[]     @relation("UserReferrals") // Система рефералів
+  balance    Float      @default(0.0)
+  role       String     @default("USER")
+  referrals  User[]     @relation("UserReferrals")
   referrer   User?      @relation("UserReferrals", fields: [referrerId], references: [id])
   referrerId String?
   tasks      UserTask[]
@@ -26,25 +26,20 @@ model User {
 // Модель Завдання
 model Task {
   id          String     @id @default(uuid())
-  title       String     @unique // <--- ДОДАНО @unique ДЛЯ ВИПРАВЛЕННЯ ПОМИЛКИ
-  description String?    // Зробив необов'язковим, щоб seed.js не сварився на відсутність опису
-  reward      Float      // Скільки платимо за виконання
-  category    String     @default("General") // Додав значення за замовчуванням
+  title       String     @unique
+  description String?
+  reward      Float
+  category    String     @default("General")
   users       UserTask[]
 }
 
-// Зв'язок між користувачем і завданням (хто що виконав)
+// Зв'язок між користувачем і завданням
 model UserTask {
   id        String   @id @default(uuid())
   user      User     @relation(fields: [userId], references: [id])
   userId    String
   task      Task     @relation(fields: [taskId], references: [id])
   taskId    String
-  status    String   @default("COMPLETED") // Стан виконання
-  createdAt DateTime @default(now())
-}
-  task      Task     @relation(fields: [taskId], references: [id])
-  taskId    String
-  status    String   @default("COMPLETED") // Стан виконання
+  status    String   @default("COMPLETED")
   createdAt DateTime @default(now())
 }
