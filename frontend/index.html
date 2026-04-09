@@ -1,50 +1,40 @@
-<style>
-      /* Основні системні налаштування */
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Earn Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Твої стилі */
       body {
         margin: 0;
         padding: 0;
         background-color: black;
         color: white;
         overflow: hidden;
-        
-        /* Глобальне вимкнення виділення та підсвічування */
         -webkit-tap-highlight-color: transparent;
         -webkit-touch-callout: none;
         -webkit-user-select: none;
-        -khtml-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
         user-select: none;
-        
-        /* Запобігає зуму та затримці кліку */
         touch-action: manipulation;
       }
 
       #root {
         height: 100vh;
+        width: 100vw;
       }
 
-      /* Дозволяємо виділення тексту тільки в інпутах (логін/пароль) */
       input, textarea {
         user-select: text !important;
         -webkit-user-select: text !important;
         touch-action: auto !important;
       }
 
-      /* АНІМАЦІЯ ВИЛІТАЮЧИХ ЦИФР */
       @keyframes float-up {
-        0% {
-          opacity: 1;
-          transform: translate(-50%, -50%) scale(1);
-        }
-        30% {
-          opacity: 1;
-          transform: translate(-50%, -180%) scale(1.3);
-        }
-        100% {
-          opacity: 0;
-          transform: translate(-50%, -350%) scale(0.7);
-        }
+        0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        30% { opacity: 1; transform: translate(-50%, -180%) scale(1.3); }
+        100% { opacity: 0; transform: translate(-50%, -350%) scale(0.7); }
       }
 
       .animate-float-up {
@@ -60,3 +50,13 @@
         transition: all 0.3s ease-out;
       }
     </style>
+  </head>
+  <body>
+    <!-- 1. Контейнер, куди React малює гру -->
+    <div id="root"></div>
+
+    <!-- 2. Команда запустити твій JavaScript -->
+    <!-- ВАЖЛИВО: перевір, щоб шлях до main.jsx був правильним -->
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
