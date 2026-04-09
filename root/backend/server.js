@@ -14,20 +14,26 @@ const PORT = process.env.PORT || 10000;
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json());
 
-// --- ЛОГІКА ВІДНОВЛЕННЯ ЕНЕРГІЇ ---
+// --- КОНФІГУРАЦІЯ ЦІН (UPGRADES) ---
+const UPGRADES_CONFIG = {
+  multitap: { baseCost: 5.0, multiplier: 2.0, rewardAdd: 0.01 },
+  energyLimit: { baseCost: 3.0, multiplier: 1.8, energyAdd: 500 }
+};
+
+const calculateCost = (base, mult, level) => base * Math.pow(mult, level - 1);
+
+// --- ЛОГІКА ЕНЕРГІЇ ---
 const calculateEnergyRecovery = (user) => {
   const now = new Date();
-  // Використовуємо lastEnergyUpdate або updatedAt, якщо першого ще немає в БД
   const lastUpdate = new Date(user.lastEnergyUpdate || user.updatedAt || now);
   const secondsPassed = (now.getTime() - lastUpdate.getTime()) / 1000;
   
   const maxEng = user.maxEnergy || 5000;
-  const recoveryRate = maxEng / (150 * 60); // 150 хвилин до повного баку
+  const recoveryRate = maxEng / (150 * 60); 
   const recovered = Math.floor(secondsPassed * recoveryRate);
   
   if (recovered > 0) {
-    const newEnergy = Math.min(maxEng, (user.energy || 0) + recovered);
-    return { newEnergy, shouldUpdate: true };
+    return { newEnergy: Math.min(maxEng, (user.energy || 0) + recovered), shouldUpdate: true };
   }
   return { newEnergy: user.energy || 0, shouldUpdate: false };
 };
@@ -45,33 +51,47 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// --- АВТОРИЗАЦІЯ ---
+// --- АВТОРИЗАЦІЯ (З РЕФЕРАЛАМИ) ---
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, referrerId } = req.body;
   if (!email || !password) return res.status(400).json({ error: "Введіть дані" });
 
-  const hashedPassword = await bcrypt.hash(password, 10);
   try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const referralCode = `XAXM-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
     const user = await prisma.user.create({
       data: { 
         email, password: hashedPassword,
         energy: 5000, maxEnergy: 5000,
-        clickLevel: 1, balance: 0.0,
-        // Спроба записати дату, Prisma проігнорує, якщо поля немає в схемі
+        clickLevel: 1, balance: referrerId ? 50.0 : 0.0, // Бонус $50 новачку за рефку
+        referralCode,
+        referrerId: referrerId || null,
         lastEnergyUpdate: new Date()
       }
     });
+
+    // Якщо є реферер — даємо йому бонус $100 за друга
+    if (referrerId) {
+      await prisma.user.update({
+        where: { id: referrerId },
+        data: { balance: { increment: 100.0 } }
+      }).catch(e => console.log("Referrer bonus failed", e));
+    }
+
     res.json({ message: "User created", userId: user.id });
   } catch (e) { 
-    console.error("Reg Error:", e);
-    res.status(400).json({ error: "Email вже зайнятий або помилка БД" }); 
+    res.status(400).json({ error: "Email вже зайнятий" }); 
   }
 });
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ 
+        where: { email },
+        include: { referrals: true } // Додаємо список рефералів
+    });
     if (user && await bcrypt.compare(password, user.password)) {
       const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '24h' });
       res.json({ token, user });
@@ -81,118 +101,102 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const user = await prisma.user.findUnique({ 
+        where: { id: req.user.id },
+        include: { referrals: true }
+    });
     if (!user) return res.status(404).json({ error: "Не знайдено" });
 
     const { newEnergy, shouldUpdate } = calculateEnergyRecovery(user);
-
     if (shouldUpdate) {
-      const updateData = { energy: newEnergy };
-      if ('lastEnergyUpdate' in user) updateData.lastEnergyUpdate = new Date();
-
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
-        data: updateData
+        data: { energy: newEnergy, lastEnergyUpdate: new Date() },
+        include: { referrals: true }
       });
       return res.json(updatedUser);
     }
     res.json(user);
-  } catch (err) { 
-    console.error("Me Error:", err);
-    res.status(500).json({ error: "Серверна помилка" }); 
-  }
+  } catch (err) { res.status(500).json({ error: "Серверна помилка" }); }
 });
 
-// --- ІГРОВА ЛОГІКА (TAP) ---
+// --- ІГРОВА ЛОГІКА (TAP + REF COMMISSION) ---
 app.post('/api/user/tap', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    if (!user) return res.status(404).json({ error: "Користувача не знайдено" });
-
     const { newEnergy } = calculateEnergyRecovery(user);
 
-    if (newEnergy <= 0) return res.status(400).json({ error: "Немає енергії!" });
+    if (newEnergy < 1) return res.status(400).json({ error: "Немає енергії!" });
 
     const reward = (user.clickLevel || 1) * 0.01;
 
-    const updateData = {
-      balance: { increment: reward },
-      energy: newEnergy - 1
-    };
+    // Оновлюємо юзера
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { 
+        balance: { increment: reward }, 
+        energy: newEnergy - 1,
+        lastEnergyUpdate: new Date()
+      }
+    });
 
-    // Додаємо поле тільки якщо воно існує в об'єкті user (захист 500 помилки)
-    if ('lastEnergyUpdate' in user) {
-      updateData.lastEnergyUpdate = new Date();
+    // ПАСИВНИЙ ДОХІД: 10% від кліку йде рефереру
+    if (user.referrerId) {
+        await prisma.user.update({
+            where: { id: user.referrerId },
+            data: { balance: { increment: reward * 0.1 } }
+        }).catch(() => {});
     }
 
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
-      data: updateData
-    });
-
     res.json({ balance: updatedUser.balance, energy: updatedUser.energy, reward });
-  } catch (err) { 
-    console.error("Tap Error:", err);
-    res.status(500).json({ error: "Помилка кліку" }); 
-  }
+  } catch (err) { res.status(500).json({ error: "Помилка кліку" }); }
 });
 
-// --- ЗАВДАННЯ ---
-app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
-  const { taskId } = req.body;
-  try {
-    const alreadyDone = await prisma.userTask.findFirst({
-      where: { userId: req.user.id, taskId: taskId }
-    });
-    if (alreadyDone) return res.status(400).json({ error: "Вже виконано" });
-
-    let reward = 50.0; // Дефолтна нагорода за ТГ
-    
-    // Спроба знайти нагороду в таблиці Task, якщо вона є
-    try {
-      const task = await prisma.task.findUnique({ where: { id: taskId } });
-      if (task) reward = task.reward;
-    } catch (e) { console.log("Task table check skipped"); }
-
-    const [updatedUser] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id: req.user.id },
-        data: { balance: { increment: reward } }
-      }),
-      prisma.userTask.create({
-        data: { userId: req.user.id, taskId: taskId }
-      })
-    ]);
-
-    res.json({ message: "Успіх!", newBalance: updatedUser.balance });
-  } catch (err) { 
-    console.error("Task Error:", err);
-    res.status(500).json({ error: "Помилка виконання" }); 
-  }
-});
-
-// --- БОНУС ---
-app.post('/api/user/bonus', authenticateToken, async (req, res) => {
-  try {
+// --- МАГАЗИН ПОКРАЩЕНЬ ---
+app.get('/api/upgrades', authenticateToken, async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
-    const updateData = { 
-      balance: { increment: 1.0 },
-      energy: user.maxEnergy,
-      lastBonusDate: new Date()
-    };
-    
-    if ('lastEnergyUpdate' in user) updateData.lastEnergyUpdate = new Date();
+    const energyLevel = Math.floor((user.maxEnergy - 5000) / 500) + 1;
 
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
-      data: updateData
-    });
-    
-    res.json({ message: "Бонус отримано!", balance: updatedUser.balance });
-  } catch (err) { res.status(500).json({ error: "Помилка бонусу" }); }
+    res.json([
+      {
+        id: 'multitap',
+        name: 'Multitap',
+        level: user.clickLevel,
+        currentCost: calculateCost(UPGRADES_CONFIG.multitap.baseCost, UPGRADES_CONFIG.multitap.multiplier, user.clickLevel),
+        description: `+$0.01 per tap`,
+        icon: '☝️'
+      },
+      {
+        id: 'energyLimit',
+        name: 'Energy Limit',
+        level: energyLevel,
+        currentCost: calculateCost(UPGRADES_CONFIG.energyLimit.baseCost, UPGRADES_CONFIG.energyLimit.multiplier, energyLevel),
+        description: '+500 Max Energy',
+        icon: '🔋'
+      }
+    ]);
+});
+
+app.post('/api/upgrades/buy', authenticateToken, async (req, res) => {
+    const { upgradeId } = req.body;
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+    let cost, data;
+    if (upgradeId === 'multitap') {
+        cost = calculateCost(UPGRADES_CONFIG.multitap.baseCost, UPGRADES_CONFIG.multitap.multiplier, user.clickLevel);
+        if (user.balance < cost) return res.status(400).json({ error: "Insufficient balance" });
+        data = { balance: user.balance - cost, clickLevel: user.clickLevel + 1 };
+    } else if (upgradeId === 'energyLimit') {
+        const level = Math.floor((user.maxEnergy - 5000) / 500) + 1;
+        cost = calculateCost(UPGRADES_CONFIG.energyLimit.baseCost, UPGRADES_CONFIG.energyLimit.multiplier, level);
+        if (user.balance < cost) return res.status(400).json({ error: "Insufficient balance" });
+        data = { balance: user.balance - cost, maxEnergy: user.maxEnergy + 500 };
+    }
+
+    const updatedUser = await prisma.user.update({ where: { id: user.id }, data });
+    res.json({ user: updatedUser });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Сервер на порту ${PORT}`);
+  console.log(`🚀 XAXM Server running on port ${PORT}`);
 });
