@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-// --- MIDDLEWARE ДЛЯ ЗАХИСТУ РОУТІВ ---
+// --- MIDDLEWARE ---
 const authenticateToken = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) return res.sendStatus(401);
@@ -47,34 +47,66 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// --- ЛОГІКА ЗАРОБІТКУ (КНОПКИ) ---
-// Отримати профіль та баланс
-app.get('/api/user/profile', authenticateToken, async (req, res) => {
+// Роут для автоматичного входу (запам'ятовування)
+app.get('/api/me', authenticateToken, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-  res.json(user);
+  if (!user) return res.status(404).json({ error: "User not found" });
+  res.json({ id: user.id, email: user.email, balance: user.balance });
 });
 
-// Отримати список завдань
+// --- ЛОГІКА ЗАВДАНЬ ---
+
 app.get('/api/tasks', async (req, res) => {
   const tasks = await prisma.task.findMany();
   res.json(tasks);
 });
 
-// Виконати завдання (Натискання кнопки "Complete")
 app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
   const { taskId } = req.body;
-  const task = await prisma.task.findUnique({ where: { id: taskId } });
-  
-  // 1. Додаємо запис про виконання
-  await prisma.userTask.create({
-    data: { userId: req.user.id, taskId: taskId }
-  });
+  const userId = req.user.id;
+  const THIRTY_HOURS = 30 * 60 * 60 * 1000; // 30 годин
 
-  // 2. Оновлюємо баланс користувача
-  const updatedUser = await prisma.user.update({
-    where: { id: req.user.id },
-    data: { balance: { increment: task.reward } }
-  });
+  try {
+    // 1. Перевіряємо останнє виконання
+    const lastExecution = await prisma.userTask.findFirst({
+      where: { userId, taskId },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (lastExecution) {
+      const timeDiff = Date.now() - new Date(lastExecution.createdAt).getTime();
+      if (timeDiff < THIRTY_HOURS) {
+        const timeLeft = Math.ceil((THIRTY_HOURS - timeDiff) / (1000 * 60 * 60));
+        return res.status(400).json({ error: `Зачекайте ще ${timeLeft} год.` });
+      }
+    }
+
+    const task = await prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) return res.status(404).json({ error: "Task not found" });
+
+    // 2. Виконуємо транзакцію: гроші + запис часу
+    const [updatedUser] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { balance: { increment: task.reward } }
+      }),
+      prisma.userTask.create({
+        data: { userId, taskId }
+      })
+    ]);
+
+    res.json({ 
+      message: "Завдання виконано!", 
+      newBalance: updatedUser.balance,
+      reward: task.reward 
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: "Помилка сервера" });
+  }
+});
+
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
   res.json({ message: "Task completed!", newBalance: updatedUser.balance });
 });
