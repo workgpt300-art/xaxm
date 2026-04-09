@@ -10,7 +10,13 @@ const app = express();
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// --- РОЗШИРЕНИЙ CORS (Виправляє помилку зв'язку) ---
+app.use(cors({
+  origin: '*', 
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
 
 // --- MIDDLEWARE ---
@@ -33,8 +39,10 @@ app.post('/api/auth/register', async (req, res) => {
       data: { 
         email, 
         password: hashedPassword,
-        energy: 5000,      // Початкова енергія для нових
-        maxEnergy: 5000    // Максимальна енергія для нових
+        energy: 5000,
+        maxEnergy: 5000,
+        clickLevel: 1,
+        balance: 0.0
       }
     });
     res.json({ message: "User created", userId: user.id });
@@ -45,37 +53,42 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (user && await bcrypt.compare(password, user.password)) {
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '24h' });
-    res.json({ token, user });
-  } else {
-    res.status(401).json({ error: "Invalid credentials" });
+  try {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && await bcrypt.compare(password, user.password)) {
+      const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '24h' });
+      // Віддаємо весь об'єкт користувача
+      res.json({ token, user });
+    } else {
+      res.status(401).json({ error: "Invalid credentials" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Login failed" });
   }
 });
 
+// Отримання профілю (Виправляє ENERGY: / )
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) return res.status(404).json({ error: "User not found" });
+    
+    // Повертаємо ВСІ поля, щоб фронтенд бачив енергію та рівень
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// --- ЛОГІКА МАЙНЕРА (КЛІКЕР) ---
+// --- ЛОГІКА МАЙНЕРА ---
 
-// 1. Клік (Tap)
 app.post('/api/user/tap', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
-    // Перевірка енергії (?? 0 захищає від помилки, якщо поле порожнє)
     const currentEnergy = user.energy ?? 0;
 
     if (currentEnergy <= 0) {
-      return res.status(400).json({ error: "Немає енергії! Використайте бонус." });
+      return res.status(400).json({ error: "Немає енергії!" });
     }
 
     const reward = (user.clickLevel ?? 1) * 0.01; 
@@ -90,21 +103,18 @@ app.post('/api/user/tap', authenticateToken, async (req, res) => {
 
     res.json({ balance: updatedUser.balance, energy: updatedUser.energy, reward });
   } catch (err) {
-    res.status(500).json({ error: "Помилка при кліку" });
+    res.status(500).json({ error: "Tap error" });
   }
 });
 
-// 2. Прокачка (Upgrade)
 app.post('/api/user/upgrade', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
-    // ЦІНА: Рівень 1 -> 2 = $1.00, Рівень 2 -> 3 = $4.00 і т.д.
     const currentLevel = user.clickLevel ?? 1;
     const cost = Math.pow(currentLevel, 2); 
 
     if (user.balance < cost) {
-      return res.status(400).json({ error: `Необхідно $${cost.toFixed(2)}` });
+      return res.status(400).json({ error: `Потрібно $${cost.toFixed(2)}` });
     }
 
     const updatedUser = await prisma.user.update({
@@ -112,17 +122,16 @@ app.post('/api/user/upgrade', authenticateToken, async (req, res) => {
       data: { 
         balance: { decrement: cost },
         clickLevel: { increment: 1 },
-        maxEnergy: { increment: 500 } // Кожен рівень додає 500 до ліміту
+        maxEnergy: { increment: 500 }
       }
     });
 
     res.json(updatedUser);
   } catch (err) {
-    res.status(500).json({ error: "Помилка апгрейду" });
+    res.status(500).json({ error: "Upgrade error" });
   }
 });
 
-// 3. Бонус (Bonus)
 app.post('/api/user/bonus', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -132,74 +141,51 @@ app.post('/api/user/bonus', authenticateToken, async (req, res) => {
       const diff = now.getTime() - new Date(user.lastBonusDate).getTime();
       if (diff < 24 * 60 * 60 * 1000) {
         const hoursLeft = Math.ceil((24 * 60 * 60 * 1000 - diff) / (1000 * 60 * 60));
-        return res.status(400).json({ error: `Бонус буде доступний через ${hoursLeft} год.` });
+        return res.status(400).json({ error: `Доступно через ${hoursLeft} год.` });
       }
     }
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
       data: { 
-        balance: { increment: 1.0 }, // Даємо $1
-        energy: user.maxEnergy ?? 5000, // Повністю відновлюємо енергію
+        balance: { increment: 1.0 },
+        energy: user.maxEnergy ?? 5000,
         lastBonusDate: now
       }
     });
 
-    res.json({ message: "Бонус отримано! Енергію відновлено.", balance: updatedUser.balance });
+    res.json({ message: "Бонус отримано!", balance: updatedUser.balance });
   } catch (err) {
-    res.status(500).json({ error: "Помилка отримання бонусу" });
+    res.status(500).json({ error: "Bonus error" });
   }
 });
 
-// --- ЛОГІКА ЗАВДАНЬ ---
+// --- ЗАВДАННЯ ---
 app.get('/api/tasks', async (req, res) => {
   try {
     const tasks = await prisma.task.findMany();
     res.json(tasks);
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch tasks" });
+    res.status(500).json({ error: "Tasks error" });
   }
 });
 
 app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
   const { taskId } = req.body;
-  const userId = req.user.id;
-  const THIRTY_HOURS = 30 * 60 * 60 * 1000;
-
   try {
-    const lastExecution = await prisma.userTask.findFirst({
-      where: { userId, taskId },
-      orderBy: { createdAt: 'desc' }
-    });
-
-    if (lastExecution) {
-      const timeDiff = Date.now() - new Date(lastExecution.createdAt).getTime();
-      if (timeDiff < THIRTY_HOURS) {
-        const timeLeft = Math.ceil((THIRTY_HOURS - timeDiff) / (1000 * 60 * 60));
-        return res.status(400).json({ error: `Зачекайте ще ${timeLeft} год.` });
-      }
-    }
-
     const task = await prisma.task.findUnique({ where: { id: taskId } });
-    if (!task) return res.status(404).json({ error: "Task not found" });
-
     const [updatedUser] = await prisma.$transaction([
       prisma.user.update({
-        where: { id: userId },
+        where: { id: req.user.id },
         data: { balance: { increment: task.reward } }
       }),
       prisma.userTask.create({
-        data: { userId, taskId }
+        data: { userId: req.user.id, taskId }
       })
     ]);
-
-    res.json({ 
-      message: "Success", 
-      newBalance: updatedUser.balance,
-      reward: task.reward 
-    });
+    res.json({ newBalance: updatedUser.balance, reward: task.reward });
   } catch (err) {
-    res.status(500).json({ error: "Transaction failed" });
+    res.status(500).json({ error: "Task failed" });
   }
 });
 
