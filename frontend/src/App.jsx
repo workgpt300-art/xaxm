@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from './store';
 import toast, { Toaster } from 'react-hot-toast';
 
-const API_URL = "https://xaxm-backend.onrender.com";
+const API_URL = "https://xaxmm.onrender.com/";
 
 // --- ВХІД ТА РЕЄСТРАЦІЯ ---
 const Auth = () => {
