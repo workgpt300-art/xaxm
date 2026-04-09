@@ -42,4 +42,7 @@ model UserTask {
   taskId    String
   status    String   @default("COMPLETED")
   createdAt DateTime @default(now())
+
+  // Додаємо індекс для прискорення пошуку останнього виконання завдання
+  @@index([userId, taskId, createdAt])
 }
