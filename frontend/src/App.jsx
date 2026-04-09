@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
-import { useAuthStore } from './store'; // Створимо наступним кроком
+import { useAuthStore } from './store';
 import toast, { Toaster } from 'react-hot-toast';
+
+// --- ОДИН РЯДОК ДЛЯ ВСІХ ЗАПИТІВ ---
+const API_URL = "https://xaxm-backend.onrender.com";
 
 // --- КОМПОНЕНТ: Перемикач мови ---
 const LangSwitcher = () => {
@@ -33,7 +36,8 @@ const Login = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      const { data } = await axios.post('http://localhost:5000/api/auth/login', form);
+      // Замінено localhost на API_URL
+      const { data } = await axios.post(`${API_URL}/api/auth/login`, form);
       setAuth(data.user, data.token);
       toast.success(t('login.success'));
       navigate('/dashboard');
@@ -70,12 +74,14 @@ const Dashboard = () => {
   const [balance, setBalance] = useState(user?.balance || 0);
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/tasks').then(res => setTasks(res.data));
+    // Замінено localhost на API_URL
+    axios.get(`${API_URL}/api/tasks`).then(res => setTasks(res.data));
   }, []);
 
   const completeTask = async (taskId) => {
     try {
-      const { data } = await axios.post('http://localhost:5000/api/tasks/complete', 
+      // Замінено localhost на API_URL
+      const { data } = await axios.post(`${API_URL}/api/tasks/complete`, 
         { taskId }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
