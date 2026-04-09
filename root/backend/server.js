@@ -6,12 +6,13 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 dotenv.config();
-
 const app = express();
 const prisma = new PrismaClient();
-const PORT = process.env.PORT || 10000; // Render зазвичай використовує 10000
 
-// --- РОЗШИРЕНИЙ CORS ---
+// Render призначає свій PORT, тому важливо брати його з process.env
+const PORT = process.env.PORT || 10000; 
+
+// --- CORS ---
 app.use(cors({
   origin: '*', 
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -20,9 +21,9 @@ app.use(cors({
 
 app.use(express.json());
 
-// Лог для перевірки, чи приходять запити
+// Логгер запитів (допоможе бачити в Logs Render, чи доходять запити)
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  console.log(`${req.method} ${req.url}`);
   next();
 });
 
@@ -30,7 +31,7 @@ app.use((req, res, next) => {
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
-  
+
   if (!token) return res.status(401).json({ error: "Токен відсутній" });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
@@ -43,7 +44,7 @@ const authenticateToken = (req, res, next) => {
 // --- АВТОРИЗАЦІЯ ---
 app.post('/api/auth/register', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: "Вкажіть пошту та пароль" });
+  if (!email || !password) return res.status(400).json({ error: "Введіть email та пароль" });
 
   const hashedPassword = await bcrypt.hash(password, 10);
   try {
@@ -59,7 +60,7 @@ app.post('/api/auth/register', async (req, res) => {
     });
     res.json({ message: "User created", userId: user.id });
   } catch (e) { 
-    res.status(400).json({ error: "Email вже існує або помилка бази" }); 
+    res.status(400).json({ error: "Цей Email вже зареєстровано" }); 
   }
 });
 
@@ -71,10 +72,10 @@ app.post('/api/auth/login', async (req, res) => {
       const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '24h' });
       res.json({ token, user });
     } else {
-      res.status(401).json({ error: "Невірні дані для входу" });
+      res.status(401).json({ error: "Невірний email або пароль" });
     }
   } catch (err) {
-    res.status(500).json({ error: "Помилка сервера при вході" });
+    res.status(500).json({ error: "Помилка при вході" });
   }
 });
 
@@ -84,7 +85,7 @@ app.get('/api/me', authenticateToken, async (req, res) => {
     if (!user) return res.status(404).json({ error: "Користувача не знайдено" });
     res.json(user);
   } catch (err) {
-    res.status(500).json({ error: "Помилка бази даних" });
+    res.status(500).json({ error: "Серверна помилка" });
   }
 });
 
@@ -110,7 +111,7 @@ app.post('/api/user/tap', authenticateToken, async (req, res) => {
 
     res.json({ balance: updatedUser.balance, energy: updatedUser.energy, reward });
   } catch (err) {
-    res.status(500).json({ error: "Помилка при кліку" });
+    res.status(500).json({ error: "Помилка кліку" });
   }
 });
 
@@ -194,20 +195,18 @@ app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
     ]);
     res.json({ newBalance: updatedUser.balance, reward: task.reward });
   } catch (err) {
-    res.status(500).json({ error: "Помилка завершення завдання" });
+    res.status(500).json({ error: "Помилка виконання" });
   }
 });
 
-// Глобальна обробка помилок (щоб сервер не падав)
+// Глобальний обробник помилок (щоб сервер не закривав з'єднання при помилці)
 app.use((err, req, res, next) => {
-  console.error("КРИТИЧНА ПОМИЛКА:", err);
-  res.status(500).json({ error: "Внутрішня помилка сервера" });
+  console.error('SERVER ERROR:', err);
+  res.status(500).json({ error: 'Внутрішня помилка сервера' });
 });
 
+// --- ЗАПУСК ---
+// Додавання '0.0.0.0' є обов'язковим для Render
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-  🚀 SERVER IS LIVE!
-  📡 Port: ${PORT}
-  🔗 API: https://xaxm-backend.onrender.com
-  `);
+  console.log(`🚀 Сервер запущено на порту ${PORT}`);
 });
