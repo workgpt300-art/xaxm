@@ -19,8 +19,8 @@ model User {
   
   // --- ПРОКАЧКА ТА БОНУСИ ---
   clickLevel      Int        @default(1)      // Рівень кліку (сила тапу)
-  energy          Int        @default(100)    // Поточна енергія
-  maxEnergy       Int        @default(100)    // Максимальна енергія
+  energy          Int        @default(5000)   // Встановлено 5000 енергії за замовчуванням
+  maxEnergy       Int        @default(5000)   // Максимальна енергія також 5000
   lastBonusDate   DateTime?                   // Дата останнього отриманого бонусу
   
   // Реферальна система
