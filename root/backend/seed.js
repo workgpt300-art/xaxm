@@ -6,13 +6,11 @@ async function main() {
   console.log('Starting seed...');
 
   try {
-    // Використовуємо TRUNCATE з CASCADE — це видалить дані з обох таблиць 
-    // і ігноруватиме помилки зв'язків (Foreign Keys)
+    // Очищуємо таблиці через SQL, щоб уникнути помилок зв'язків
     await prisma.$executeRawUnsafe(`TRUNCATE TABLE "UserTask", "Task" RESTART IDENTITY CASCADE;`);
     console.log('Tables cleared successfully.');
   } catch (error) {
     console.log('Truncate failed, trying manual delete...');
-    // Запасний варіант, якщо TRUNCATE не спрацює
     await prisma.userTask.deleteMany({});
     await prisma.task.deleteMany({});
   }
@@ -54,7 +52,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
-  });
     await prisma.$disconnect();
   });
