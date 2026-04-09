@@ -15,21 +15,21 @@ app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'], allowedHe
 app.use(express.json());
 
 // --- ЛОГІКА ВІДНОВЛЕННЯ ЕНЕРГІЇ ---
-// 5000 енергії / 150 хв = 33.33 енергії в хвилину
 const calculateEnergyRecovery = (user) => {
   const now = new Date();
-  const lastUpdate = new Date(user.lastEnergyUpdate || user.updatedAt);
+  // Використовуємо updatedAt, якщо lastEnergyUpdate ще не додано в БД
+  const lastUpdate = new Date(user.lastEnergyUpdate || user.updatedAt || now);
   const secondsPassed = (now.getTime() - lastUpdate.getTime()) / 1000;
   
-  // Швидкість: 5000 / (150 * 60) = 0.555 енергії в секунду
-  const recoveryRate = user.maxEnergy / (150 * 60); 
+  const maxEng = user.maxEnergy || 5000;
+  const recoveryRate = maxEng / (150 * 60); 
   const recovered = Math.floor(secondsPassed * recoveryRate);
   
   if (recovered > 0) {
-    const newEnergy = Math.min(user.maxEnergy, user.energy + recovered);
+    const newEnergy = Math.min(maxEng, (user.energy || 0) + recovered);
     return { newEnergy, shouldUpdate: true };
   }
-  return { newEnergy: user.energy, shouldUpdate: false };
+  return { newEnergy: user.energy || 0, shouldUpdate: false };
 };
 
 // --- MIDDLEWARE ---
@@ -57,11 +57,15 @@ app.post('/api/auth/register', async (req, res) => {
         email, password: hashedPassword,
         energy: 5000, maxEnergy: 5000,
         clickLevel: 1, balance: 0.0,
+        // Спробуємо записати дату, якщо модель дозволяє
         lastEnergyUpdate: new Date()
       }
     });
     res.json({ message: "User created", userId: user.id });
-  } catch (e) { res.status(400).json({ error: "Email вже зайнятий" }); }
+  } catch (e) { 
+    console.error("Register error:", e);
+    res.status(400).json({ error: "Email вже зайнятий або помилка БД" }); 
+  }
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -75,7 +79,6 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Помилка входу" }); }
 });
 
-// Отримання даних профілю з авто-відновленням енергії
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -84,55 +87,71 @@ app.get('/api/me', authenticateToken, async (req, res) => {
     const { newEnergy, shouldUpdate } = calculateEnergyRecovery(user);
 
     if (shouldUpdate) {
+      // Динамічно формуємо дані для оновлення
+      const updateData = { energy: newEnergy };
+      if ('lastEnergyUpdate' in user) updateData.lastEnergyUpdate = new Date();
+
       const updatedUser = await prisma.user.update({
         where: { id: user.id },
-        data: { energy: newEnergy, lastEnergyUpdate: new Date() }
+        data: updateData
       });
       return res.json(updatedUser);
     }
     res.json(user);
-  } catch (err) { res.status(500).json({ error: "Помилка" }); }
+  } catch (err) { 
+    console.error("ME error:", err);
+    res.status(500).json({ error: "Помилка сервера" }); 
+  }
 });
 
-// --- ІГРОВА ЛОГІКА ---
+// --- ІГРОВА ЛОГІКА (FIXED TAP) ---
 app.post('/api/user/tap', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
-    // Спершу відновлюємо енергію, яка накопичилась до моменту кліку
+    if (!user) return res.status(404).json({ error: "User not found" });
+
     const { newEnergy } = calculateEnergyRecovery(user);
 
     if (newEnergy <= 0) return res.status(400).json({ error: "Немає енергії!" });
 
     const reward = (user.clickLevel || 1) * 0.01;
 
+    // Динамічне оновлення: додаємо lastEnergyUpdate тільки якщо воно є в об'єкті user
+    const updateData = {
+      balance: { increment: reward },
+      energy: newEnergy - 1
+    };
+    
+    if ('lastEnergyUpdate' in user) {
+      updateData.lastEnergyUpdate = new Date();
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: req.user.id },
-      data: { 
-        balance: { increment: reward },
-        energy: newEnergy - 1,
-        lastEnergyUpdate: new Date() // Важливо оновлювати час при кожному кліку
-      }
+      data: updateData
     });
 
     res.json({ balance: updatedUser.balance, energy: updatedUser.energy, reward });
-  } catch (err) { res.status(500).json({ error: "Помилка кліку" }); }
+  } catch (err) { 
+    console.error("TAP ERROR DETAILS:", err); // Виведеться в логах Render
+    res.status(500).json({ error: "Помилка кліку на сервері" }); 
+  }
 });
 
-// Виконання завдань (включаючи Telegram)
 app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
-  const { taskId } = req.body; // Очікуємо "tg_sub" або ID з бази
+  const { taskId } = req.body;
   try {
-    // Перевіряємо, чи не виконував вже
     const alreadyDone = await prisma.userTask.findFirst({
       where: { userId: req.user.id, taskId: taskId }
     });
     if (alreadyDone) return res.status(400).json({ error: "Завдання вже виконано" });
 
-    // Знаходимо нагороду. Якщо це ТГ, можна прописати вручну або взяти з бази
     let reward = 50.0; 
-    const task = await prisma.task.findUnique({ where: { id: taskId } });
-    if (task) reward = task.reward;
+    // Спроба знайти завдання в БД, якщо не знайдено - використовуємо 50 за дефолтом
+    try {
+        const task = await prisma.task.findUnique({ where: { id: taskId } });
+        if (task) reward = task.reward;
+    } catch (e) { console.log("Task table maybe missing, using default reward"); }
 
     const [updatedUser] = await prisma.$transaction([
       prisma.user.update({
@@ -140,29 +159,15 @@ app.post('/api/tasks/complete', authenticateToken, async (req, res) => {
         data: { balance: { increment: reward } }
       }),
       prisma.userTask.create({
-        data: { userId: req.user.id, taskId: taskId }
+        data: { userId: req.user.id, taskId }
       })
     ]);
 
     res.json({ message: "Успіх!", newBalance: updatedUser.balance });
-  } catch (err) { res.status(500).json({ error: "Помилка виконання" }); }
-});
-
-// Бонус і Апгрейд залишаються без змін, але додай оновлення lastEnergyUpdate
-app.post('/api/user/bonus', authenticateToken, async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user.id },
-      data: { 
-        balance: { increment: 1.0 },
-        energy: user.maxEnergy,
-        lastEnergyUpdate: new Date(),
-        lastBonusDate: new Date()
-      }
-    });
-    res.json({ message: "Бонус отримано!", balance: updatedUser.balance });
-  } catch (err) { res.status(500).json({ error: "Помилка" }); }
+  } catch (err) { 
+    console.error("TASK error:", err);
+    res.status(500).json({ error: "Помилка виконання" }); 
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
