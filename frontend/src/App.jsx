@@ -21,7 +21,8 @@ const translations = {
     startQuiz: "Start Quiz", done: "Done", claim: "Claim", invite: "Invite Friends",
     inviteDesc: "Get 10% from friend's earnings", noFriends: "No friends yet",
     logout: "Log Out", copy: "Copy", sync: "SYNCING...", nextLeague: "Next League at",
-    combo: "COMBO", dailyCheck: "Daily Reward", bonus: "COMBO BONUS", copied: "Copied!", lowBalance: "Low balance!"
+    combo: "COMBO", dailyCheck: "Daily Reward", bonus: "COMBO BONUS", copied: "Copied!", lowBalance: "Low balance!",
+    wait: "Wait", checking: "Checking..."
   },
   ua: {
     miner: "Майнер", tasks: "Завдання", shop: "Магазин", friends: "Друзі", profile: "Профіль",
@@ -31,7 +32,8 @@ const translations = {
     startQuiz: "Почати тест", done: "Готово", claim: "Забрати", invite: "Запросити друзів",
     inviteDesc: "Отримуй 10% від заробітку друзів", noFriends: "Друзів поки немає",
     logout: "Вийти", copy: "Копіювати", sync: "СИНХРОНІЗАЦІЯ...", nextLeague: "Наступна ліга через",
-    combo: "КОМБО", dailyCheck: "Щоденна нагорода", bonus: "КОМБО БОНУС", copied: "Скопійовано!", lowBalance: "Недостатньо коштів!"
+    combo: "КОМБО", dailyCheck: "Щоденна нагорода", bonus: "КОМБО БОНУС", copied: "Скопійовано!", lowBalance: "Недостатньо коштів!",
+    wait: "Зачекайте", checking: "Перевірка..."
   }
 };
 
@@ -54,6 +56,11 @@ function App() {
   const [combo, setCombo] = useState(0);
   const [lastTap, setLastTap] = useState(0);
   const [notif, setNotif] = useState(null);
+  
+  // Кулдауни
+  const [wheelCooldown, setWheelCooldown] = useState(0);
+  const [dailyCooldown, setDailyCooldown] = useState(0);
+  const [taskLoading, setTaskLoading] = useState(null);
 
   const t = translations[lang];
 
@@ -78,6 +85,37 @@ function App() {
     const next = LEAGUES[nextIdx] || null;
     return { current, next };
   }, [user]);
+
+  // Форматування часу
+  const formatTime = (ms) => {
+    if (ms <= 0) return "00:00:00";
+    const h = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // Логіка оновлення кулдаунів
+  useEffect(() => {
+    const checkTimers = () => {
+      const lastSpin = localStorage.getItem('last_spin_time');
+      const lastDaily = localStorage.getItem('last_daily_time');
+      const now = Date.now();
+      const day = 24 * 60 * 60 * 1000;
+
+      if (lastSpin) {
+        const left = (parseInt(lastSpin) + day) - now;
+        setWheelCooldown(left > 0 ? left : 0);
+      }
+      if (lastDaily) {
+        const leftDaily = (parseInt(lastDaily) + day) - now;
+        setDailyCooldown(leftDaily > 0 ? leftDaily : 0);
+      }
+    };
+    checkTimers();
+    const interval = setInterval(checkTimers, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('lang', lang);
@@ -182,6 +220,7 @@ function App() {
   };
 
   const completeTask = async (taskId, reward) => {
+    setTaskLoading(taskId);
     try {
       const res = await axios.post(`${API_URL}/api/user/reward`, 
         { amount: reward, taskId: `task_${taskId}` }, 
@@ -194,11 +233,14 @@ function App() {
       if (e.response?.status === 400) {
         setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
       }
+    } finally {
+      setTaskLoading(null);
     }
   };
 
   const checkTaskRequirement = (task) => {
-    if (task.completed) return;
+    if (task.completed || taskLoading === task.id) return;
+    
     if (task.id === 'earn_350') {
       if ((user.totalEarned || user.balance) >= 350) completeTask(task.id, task.reward);
       else showMessage(`Need $${(350 - (user.totalEarned || 0)).toFixed(2)} more!`);
@@ -207,9 +249,27 @@ function App() {
       else showMessage(`Upgrade Multi-Tap to LVL 5!`);
     } else if (task.type === 'link') {
       window.open(task.link, '_blank');
-      setTimeout(() => completeTask(task.id, task.reward), 2000);
+      setTaskLoading(task.id);
+      setTimeout(() => completeTask(task.id, task.reward), 3000);
     } else if (task.id === 'wheel_spin') {
       setShowSpin(true);
+    }
+  };
+
+  const handleDailyClaim = async () => {
+    if (dailyCooldown > 0) return;
+    try {
+      const reward = 10.00;
+      const res = await axios.post(`${API_URL}/api/user/reward`, 
+        { amount: reward, taskId: 'daily_login' }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (res.data.user) setUser(res.data.user);
+      localStorage.setItem('last_daily_time', Date.now().toString());
+      setDailyCooldown(24 * 60 * 60 * 1000);
+      showMessage(`Daily Reward: +$${reward}`);
+    } catch (e) {
+      showMessage("Already claimed today");
     }
   };
 
@@ -246,7 +306,7 @@ function App() {
   };
 
   const handleSpin = async () => {
-    if (isSpinning) return;
+    if (isSpinning || wheelCooldown > 0) return;
     setIsSpinning(true);
     try {
       const res = await axios.post(`${API_URL}/api/spin`, {}, { headers: { Authorization: `Bearer ${token}` } });
@@ -254,6 +314,10 @@ function App() {
         setIsSpinning(false);
         setShowSpin(false);
         showMessage(`Win: $${res.data.win}!`);
+        
+        localStorage.setItem('last_spin_time', Date.now().toString());
+        setWheelCooldown(24 * 60 * 60 * 1000);
+
         const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
         if (spinTask && !spinTask.completed) completeTask('wheel_spin', spinTask.reward);
         fetchUser(token);
@@ -294,7 +358,6 @@ function App() {
 
   return (
     <div className="h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden select-none font-sans">
-      {/* Toast Notification */}
       {notif && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-white text-black px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-[0_0_30px_rgba(255,255,255,0.4)] animate-in slide-in-from-top-10">
           {notif}
@@ -373,15 +436,23 @@ function App() {
         {activeTab === 'tasks' && (
           <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500">
             <h2 className="text-3xl font-black italic uppercase tracking-tighter">{t.tasks}</h2>
-            <div className="glass-card p-5 rounded-[2.5rem] border border-yellow-500/30 bg-yellow-500/5 flex justify-between items-center group">
+            <div className={`glass-card p-5 rounded-[2.5rem] border border-yellow-500/30 bg-yellow-500/5 flex justify-between items-center group transition-opacity ${dailyCooldown > 0 ? 'opacity-60' : ''}`}>
                 <div className="flex items-center gap-3">
                     <span className="text-2xl group-hover:scale-125 transition-transform">🎁</span>
                     <div>
                         <h4 className="font-black text-xs uppercase">{t.dailyCheck}</h4>
-                        <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-tighter">Available every 24h</span>
+                        <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-tighter">
+                          {dailyCooldown > 0 ? `Next: ${formatTime(dailyCooldown)}` : 'Available Now!'}
+                        </span>
                     </div>
                 </div>
-                <button className="bg-yellow-500 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Claim</button>
+                <button 
+                  onClick={handleDailyClaim}
+                  disabled={dailyCooldown > 0}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${dailyCooldown > 0 ? 'bg-gray-800 text-gray-500' : 'bg-yellow-500 text-black active:scale-95'}`}
+                >
+                  {dailyCooldown > 0 ? t.wait : t.claim}
+                </button>
             </div>
             {/* QUIZ SECTION */}
             <div className="relative overflow-hidden glass-card p-6 rounded-[2.5rem] neon-border-blue">
@@ -402,8 +473,12 @@ function App() {
                       <span className="text-green-400 text-[10px] font-black">+${task.reward}</span>
                     </div>
                   </div>
-                  <button disabled={task.completed} onClick={() => checkTaskRequirement(task)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${task.completed ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-white text-black active:scale-90 shadow-lg'}`}>
-                    {task.completed ? t.done : t.claim}
+                  <button 
+                    disabled={task.completed || taskLoading === task.id} 
+                    onClick={() => checkTaskRequirement(task)} 
+                    className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${task.completed ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-white text-black active:scale-90 shadow-lg'}`}
+                  >
+                    {taskLoading === task.id ? t.checking : task.completed ? t.done : t.claim}
                   </button>
                 </div>
               ))}
@@ -564,16 +639,26 @@ function App() {
 
       {showSpin && (
         <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="glass-card w-full max-w-sm rounded-[3.5rem] p-10 text-center neon-border-blue relative overflow-hidden animate-in zoom-in-95">
-            <h3 className="text-xl font-black mb-8 uppercase italic tracking-tighter">Fortune Wheel</h3>
-            <div className="relative mb-10 flex justify-center">
-                <div className={`text-8xl transition-all duration-[4000ms] ease-out ${isSpinning ? 'rotate-[3600deg]' : 'scale-100'}`}>🎡</div>
-                <div className="absolute top-[-15px] text-2xl animate-bounce">▼</div>
+          <div className="glass-card w-full max-w-sm rounded-[3.5rem] p-10 text-center neon-border-blue relative shadow-2xl">
+            <h2 className="text-3xl font-black italic mb-2 uppercase italic tracking-tighter">Wheel of Fortune</h2>
+            <p className="text-[10px] text-gray-500 font-bold uppercase mb-8">Win up to $50.00 instantly</p>
+            
+            <div className={`w-48 h-48 mx-auto mb-10 rounded-full border-8 border-white/5 relative flex items-center justify-center text-6xl shadow-[0_0_50px_rgba(255,255,255,0.1)] ${isSpinning ? 'animate-spin' : ''}`}>
+              🎡
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-white text-2xl">▼</div>
             </div>
-            <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-white text-black rounded-[2rem] font-black uppercase text-xs active:scale-95 transition-all shadow-2xl disabled:opacity-50">
-                {isSpinning ? 'SPINNING...' : 'Spin Wheel'}
+
+            <button 
+              onClick={handleSpin} 
+              disabled={isSpinning || wheelCooldown > 0} 
+              className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs transition-all shadow-2xl 
+                ${wheelCooldown > 0 
+                  ? 'bg-gray-800 text-gray-500 cursor-not-allowed' 
+                  : 'bg-white text-black active:scale-95'}`}
+            >
+                {isSpinning ? 'SPINNING...' : wheelCooldown > 0 ? `WAIT ${formatTime(wheelCooldown)}` : 'Spin Wheel'}
             </button>
-            <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-black text-[10px] uppercase tracking-widest hover:text-white transition-colors">Close</button>
+            <button onClick={() => setShowSpin(false)} className="mt-6 text-gray-500 text-[10px] font-black uppercase tracking-widest">Close</button>
           </div>
         </div>
       )}
