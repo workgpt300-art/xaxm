@@ -4,13 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Earn Platform</title>
+    <!-- Підключаємо дорогий сучасний шрифт Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      /* Твої стилі */
       body {
         margin: 0;
         padding: 0;
-        background-color: black;
+        background-color: #050505; /* Глибокий чорний */
         color: white;
         overflow: hidden;
         -webkit-tap-highlight-color: transparent;
@@ -18,6 +21,8 @@
         -webkit-user-select: none;
         user-select: none;
         touch-action: manipulation;
+        font-family: 'Outfit', sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
 
       #root {
@@ -43,20 +48,15 @@
         position: absolute;
         z-index: 100;
         font-weight: 900;
-        filter: drop-shadow(0 0 8px rgba(74, 222, 128, 0.6));
+        filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.8));
       }
 
-      .transition-all {
-        transition: all 0.3s ease-out;
-      }
+      /* Сховати скроллбар для краси */
+      ::-webkit-scrollbar { display: none; }
     </style>
   </head>
   <body>
-    <!-- 1. Контейнер, куди React малює гру -->
     <div id="root"></div>
-
-    <!-- 2. Команда запустити твій JavaScript -->
-    <!-- ВАЖЛИВО: перевір, щоб шлях до main.jsx був правильним -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
