@@ -1,8 +1,8 @@
-const express = require('express');
-const { PrismaClient } = require('@prisma/client');
-const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+import express from 'express';
+import { PrismaClient } from '@prisma/client';
+import cors from 'cors';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -22,7 +22,7 @@ const calculateEnergy = (user) => {
 const calculateOffline = (user) => {
   const now = new Date();
   const hours = (now - new Date(user.lastCheckIn)) / (1000 * 60 * 60);
-  const cappedHours = Math.min(hours, 12); // Макс за 12 годин
+  const cappedHours = Math.min(hours, 12); 
   return parseFloat((cappedHours * user.passiveIncome).toFixed(4));
 };
 
@@ -117,4 +117,5 @@ app.post('/api/upgrades/buy', auth, async (req, res) => {
   res.status(400).json({ error: "Not enough money or invalid ID" });
 });
 
-app.listen(5000, () => console.log('Server running on port 5000'));
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
