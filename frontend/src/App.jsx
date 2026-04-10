@@ -112,7 +112,7 @@ function App() {
     );
   }
 
-  if (!user) return <div className="min-h-screen bg-black text-white flex items-center justify-center font-black">{t.loading}</div>;
+  if (!user) return <div className="min-h-screen bg-black text-white flex items-center justify-center font-black">Завантаження...</div>;
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col select-none overflow-hidden">
@@ -128,11 +128,11 @@ function App() {
         
         <div onClick={() => setActiveTab('profile')} className="flex items-center gap-3 bg-gray-900/80 p-2 pl-4 rounded-full border border-purple-500/30 cursor-pointer active:scale-95 transition-all">
           <div className="text-right">
-            <p className="text-[9px] text-purple-400 font-black uppercase leading-none">{t.level} {user.clickLevel}</p>
-            <p className="text-[11px] font-bold">{user.email.split('@')[0]}</p>
+            <p className="text-[9px] text-purple-400 font-black uppercase leading-none">{t.level} {user?.clickLevel || 1}</p>
+            <p className="text-[11px] font-bold">{user?.email ? user.email.split('@')[0] : 'User'}</p>
           </div>
           <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center font-black border-2 border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
-            {user.email[0].toUpperCase()}
+            {user?.email ? user.email[0].toUpperCase() : '?'}
           </div>
         </div>
       </header>
@@ -141,13 +141,31 @@ function App() {
         {activeTab === 'miner' && (
           <div className="flex flex-col items-center w-full">
             <p className="text-gray-500 uppercase text-[10px] font-black tracking-widest mb-2">{t.balance}</p>
-            <h1 className="text-6xl font-black mb-12">${user.balance.toFixed(3)}</h1>
-            <button onPointerDown={handleTap} className="relative active:scale-90 transition-transform outline-none">
+            <h1 className="text-6xl font-black mb-12">${user?.balance?.toFixed(3) || "0.000"}</h1>
+            
+            <button onPointerDown={handleTap} className="relative active:scale-90 transition-transform outline-none mb-12">
               <div className="absolute inset-0 bg-purple-600/20 blur-[100px] rounded-full"></div>
               <div className="w-72 h-72 bg-gray-900 rounded-full border-[14px] border-gray-800/50 flex items-center justify-center shadow-2xl relative z-10 overflow-hidden">
                 <span className="text-9xl">💎</span>
               </div>
             </button>
+
+            {/* БЛОК ЕНЕРГІЇ ТЕПЕР ТУТ І ТІЛЬКИ В МАЙНІНГУ */}
+            <div className="w-full max-w-sm px-4">
+              <div className="flex justify-between items-end mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-yellow-400 text-xl">⚡</span>
+                  <span className="text-[10px] font-black text-gray-400 uppercase">{t.energy}</span>
+                </div>
+                <span className="text-xs font-black">{Math.floor(user?.energy || 0)} / {user?.maxEnergy || 0}</span>
+              </div>
+              <div className="h-3 bg-black rounded-full overflow-hidden p-0.5 border border-white/5">
+                <div 
+                  className="h-full bg-gradient-to-r from-yellow-400 via-purple-500 to-blue-500 rounded-full transition-all duration-300" 
+                  style={{ width: `${((user?.energy || 0) / (user?.maxEnergy || 1)) * 100}%` }}
+                ></div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -200,28 +218,16 @@ function App() {
 
         {activeTab === 'profile' && (
           <div className="w-full max-w-md bg-gray-900 rounded-[2.5rem] p-8 border border-white/5 text-center">
-            <div className="w-24 h-24 bg-gradient-to-tr from-purple-600 to-blue-500 rounded-full mx-auto mb-6 flex items-center justify-center text-4xl font-black shadow-2xl">{user.email[0].toUpperCase()}</div>
-            <h2 className="text-xl font-black mb-8">{user.email}</h2>
+            <div className="w-24 h-24 bg-gradient-to-tr from-purple-600 to-blue-500 rounded-full mx-auto mb-6 flex items-center justify-center text-4xl font-black shadow-2xl">
+                {user?.email ? user.email[0].toUpperCase() : '?'}
+            </div>
+            <h2 className="text-xl font-black mb-8">{user?.email || 'User'}</h2>
             <button onClick={handleLogout} className="w-full py-4 bg-red-500/10 text-red-500 rounded-2xl font-black uppercase text-[10px] border border-red-500/20">{t.logout}</button>
           </div>
         )}
       </main>
 
-      <div className="px-6 mb-28 w-full max-w-xl mx-auto z-30">
-        <div className="bg-gray-900/50 backdrop-blur-md p-4 rounded-3xl border border-white/5">
-          <div className="flex justify-between items-end mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-yellow-400 text-xl">⚡</span>
-              <span className="text-[10px] font-black text-gray-400 uppercase">{t.energy}</span>
-            </div>
-            <span className="text-xs font-black">{Math.floor(user.energy)} / {user.maxEnergy}</span>
-          </div>
-          <div className="h-3 bg-black rounded-full overflow-hidden p-0.5 border border-white/5">
-            <div className="h-full bg-gradient-to-r from-yellow-400 via-purple-500 to-blue-500 rounded-full transition-all duration-300" style={{ width: `${(user.energy / user.maxEnergy) * 100}%` }}></div>
-          </div>
-        </div>
-      </div>
-
+      {/* НИЖНЯ НАВІГАЦІЯ */}
       <nav className="fixed bottom-6 left-6 right-6 bg-gray-900/95 border border-white/10 h-20 rounded-[2.5rem] flex justify-around items-center backdrop-blur-xl z-50">
         {[
           { id: 'miner', label: t.mine, icon: '⛏️' },
