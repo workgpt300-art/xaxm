@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  background-color: #050505;
+  color: white;
+  font-family: 'Inter', sans-serif;
+  overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Анімація для колеса */
+@keyframes wheel-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(3600deg); } /* 10 повних обертів */
+}
+
+.spinning {
+  animation: wheel-rotate 4s cubic-bezier(0.15, 0, 0.15, 1) forwards;
+}
+
+/* Прибираємо синю підсвітку при кліку на мобілках */
+* {
+  user-select: none;
+}
