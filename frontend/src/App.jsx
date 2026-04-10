@@ -29,7 +29,15 @@ function App() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
-  const [penalty, setPenalty] = useState(0); // Стан для накопиченого штрафу
+  const [penalty, setPenalty] = useState(0); 
+
+  // --- СТАНИ ДЛЯ ЗАВДАНЬ ---
+  const [availableTasks, setAvailableTasks] = useState([
+    { id: 'tg_join', title: 'Join Telegram', reward: 50, icon: '✈️', type: 'link', link: 'https://t.me/your_channel', completed: false },
+    { id: 'earn_350', title: 'Earn $350 total', reward: 100, icon: '💰', type: 'progress', goal: 350, completed: false },
+    { id: 'click_master', title: 'Level 5 Clicker', reward: 75, icon: '🖱️', type: 'requirement', reqValue: 5, completed: false },
+    { id: 'wheel_spin', title: 'Spin the Wheel', reward: 25, icon: '🎡', type: 'action', completed: false }
+  ]);
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('remembered_email');
@@ -88,51 +96,76 @@ function App() {
     setClicks(prev => [...prev, { id, x, y, val: (user.clickLevel * 0.01).toFixed(2) }]);
     setTimeout(() => setClicks(prev => prev.filter(c => c.id !== id)), 800);
 
-    setUser(p => ({ ...p, balance: p.balance + (p.clickLevel * 0.01), energy: p.energy - 1 }));
+    setUser(p => ({ 
+      ...p, 
+      balance: p.balance + (p.clickLevel * 0.01), 
+      energy: p.energy - 1,
+      totalEarned: (p.totalEarned || 0) + (p.clickLevel * 0.01)
+    }));
     await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
   };
 
-  // ОНОВЛЕНА ЛОГІКА ВІДПОВІДІ
+  // --- ФУНКЦІЇ ДЛЯ ЗАВДАНЬ ---
+  const completeTask = async (taskId, reward) => {
+    try {
+      const res = await axios.post(`${API_URL}/api/user/reward`, 
+        { amount: reward, taskId: `task_${taskId}` }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      setUser(prev => ({
+        ...prev,
+        balance: prev.balance + reward,
+        totalEarned: (prev.totalEarned || 0) + reward
+      }));
+
+      if (res.data.user) setUser(res.data.user);
+      
+      setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
+      alert(`Task completed! +$${reward}`);
+    } catch (e) {
+      alert(e.response?.data?.error || "Task already completed or error occurred");
+    }
+  };
+
+  const checkTaskRequirement = (task) => {
+    if (task.completed) return;
+
+    if (task.id === 'earn_350') {
+      if ((user.totalEarned || user.balance) >= 350) completeTask(task.id, task.reward);
+      else alert(`You need$${(350 - user.totalEarned).toFixed(2)} more!`);
+    } else if (task.id === 'click_master') {
+      if (user.clickLevel >= 5) completeTask(task.id, task.reward);
+      else alert(`Upgrade your Multi-Tap to level 5 first!`);
+    } else if (task.type === 'link') {
+      window.open(task.link, '_blank');
+      completeTask(task.id, task.reward);
+    } else if (task.id === 'wheel_spin') {
+      alert("Spin the wheel first!");
+    }
+  };
+
   const handleQuizAnswer = async (index) => {
     const question = quizData[currentQuestion];
-    
     if (index === question.correct) {
-      // Розраховуємо фінальну нагороду (мінімум 0.1)
       const finalReward = Math.max(0.1, question.reward - penalty);
-      
       try {
         const res = await axios.post(`${API_URL}/api/user/reward`, 
           { amount: finalReward, taskId: `quiz_${question.id}` }, 
           { headers: { Authorization: `Bearer ${token}` } }
         );
         setUser(res.data.user);
-        
-        // Скидаємо штраф для наступного питання
         setPenalty(0);
-
-        // Перевірка: чи є наступне питання?
-        if (currentQuestion < quizData.length - 1) {
-          setCurrentQuestion(prev => prev + 1);
-        } else {
-          setQuizFinished(true);
-        }
+        if (currentQuestion < quizData.length - 1) setCurrentQuestion(prev => prev + 1);
+        else setQuizFinished(true);
       } catch (e) {
         alert("Reward already claimed!");
-        // Якщо помилка сервера, все одно пробуємо показати наступне питання
-        if (currentQuestion < quizData.length - 1) {
-          setCurrentQuestion(prev => prev + 1);
-        } else {
-          setQuizFinished(true);
-        }
+        if (currentQuestion < quizData.length - 1) setCurrentQuestion(prev => prev + 1);
+        else setQuizFinished(true);
       }
     } else {
-      // Логіка прогресивного штрафу
       alert("Wrong answer! Reward decreased.");
-      setPenalty(prev => {
-        if (prev === 0) return 1.0;      // -1.0
-        if (prev === 1.0) return 2.5;    // -1.0 + -1.5 = 2.5
-        return prev + 2.0;               // далі по -2.0
-      });
+      setPenalty(prev => (prev === 0 ? 1.0 : prev === 1.0 ? 2.5 : prev + 2.0));
     }
   };
 
@@ -149,6 +182,11 @@ function App() {
     setIsSpinning(true);
     try {
       const res = await axios.post(`${API_URL}/api/spin`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      
+      // Автоматично пробуємо виконати завдання на спін
+      const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
+      if (spinTask && !spinTask.completed) completeTask('wheel_spin', spinTask.reward);
+
       setTimeout(() => {
         setIsSpinning(false);
         setShowSpin(false);
@@ -228,12 +266,14 @@ function App() {
 
         {activeTab === 'tasks' && (
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4">
-            <h2 className="text-2xl font-black mb-6 italic uppercase">Tasks</h2>
-            <div className="relative overflow-hidden bg-gradient-to-br from-[#1a1a2e] to-[#0f0f1a] border border-white/10 p-6 rounded-[2.5rem] shadow-2xl">
+            <h2 className="text-2xl font-black mb-2 italic uppercase">Quests</h2>
+            
+            {/* Daily Quiz Card */}
+            <div className="relative overflow-hidden bg-gradient-to-br from-purple-900/40 to-[#0f0f1a] border border-white/10 p-6 rounded-[2.5rem] shadow-2xl">
               <div className="relative z-10">
-                <span className="bg-purple-500/20 text-purple-400 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Bonus</span>
-                <h3 className="text-xl font-black mt-3 mb-1">Daily Quiz</h3>
-                <p className="text-gray-400 text-xs mb-6">Test your knowledge and earn money!</p>
+                <span className="bg-purple-500 text-white text-[8px] font-black px-2 py-0.5 rounded uppercase">Daily</span>
+                <h3 className="text-xl font-black mt-2 mb-1">Knowledge Quiz</h3>
+                <p className="text-gray-400 text-[10px] mb-4 uppercase">Earn up to $5.00</p>
                 <button 
                   onClick={() => { setShowQuiz(true); setQuizFinished(false); setCurrentQuestion(0); setPenalty(0); }}
                   className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs active:scale-95 transition-all"
@@ -241,6 +281,28 @@ function App() {
                   Start Quiz
                 </button>
               </div>
+            </div>
+
+            {/* General Task List */}
+            <div className="space-y-3">
+              {availableTasks.map(task => (
+                <div key={task.id} className="bg-white/5 border border-white/10 p-4 rounded-[2rem] flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="text-2xl bg-black/40 w-12 h-12 flex items-center justify-center rounded-2xl border border-white/5">{task.icon}</div>
+                    <div>
+                      <h4 className="font-black text-sm">{task.title}</h4>
+                      <span className="text-green-400 text-[10px] font-bold">+${task.reward}</span>
+                    </div>
+                  </div>
+                  <button 
+                    disabled={task.completed}
+                    onClick={() => checkTaskRequirement(task)}
+                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${task.completed ? 'bg-green-500/20 text-green-500' : 'bg-white text-black active:scale-90'}`}
+                  >
+                    {task.completed ? 'Done' : 'Claim'}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -310,7 +372,7 @@ function App() {
         )}
       </main>
 
-      {/* MODAL: QUIZ (ОНОВЛЕНО) */}
+      {/* MODAL: QUIZ */}
       {showQuiz && (
         <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 relative">
@@ -319,8 +381,6 @@ function App() {
                 <div className="text-center mb-6">
                   <span className="text-[10px] font-black text-purple-500 uppercase">Question {currentQuestion + 1}/{quizData.length}</span>
                   <h3 className="text-xl font-black mt-2">{quizData[currentQuestion]?.question}</h3>
-                  
-                  {/* Відображення поточної винагороди зі штрафом */}
                   <p className="text-[10px] font-bold text-green-400 mt-2 uppercase tracking-widest">
                     Current Reward: ${Math.max(0.1, (quizData[currentQuestion]?.reward - penalty)).toFixed(2)}
                     {penalty > 0 && <span className="text-red-500 ml-2">(-${penalty.toFixed(1)})</span>}
