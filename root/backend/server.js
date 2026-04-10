@@ -13,7 +13,6 @@ app.use(express.json());
 
 // --- Допоміжні функції ---
 
-// Логіка зміни ліг залежно від загального заробітку
 const getLeague = (totalEarned) => {
   if (totalEarned > 5000) return "Diamond";
   if (totalEarned > 1000) return "Platinum";
@@ -48,12 +47,40 @@ const auth = (req, res, next) => {
 
 // --- Маршрути ---
 
+// НОВИЙ МАРШРУТ ДЛЯ НАГОРОД (ВИПРАВЛЯЄ 404)
+app.post('/api/user/reward', auth, async (req, res) => {
+  const { amount, taskId } = req.body;
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    
+    // Перевірка чи завдання вже виконано
+    if (user.completedTasks && user.completedTasks.includes(taskId)) {
+      return res.status(400).json({ error: "Task already completed" });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        balance: { increment: parseFloat(amount) },
+        totalEarned: { increment: parseFloat(amount) },
+        completedTasks: { push: taskId }, // Додаємо ID завдання в список
+        league: getLeague(user.totalEarned + parseFloat(amount))
+      }
+    });
+
+    res.json({ message: "Reward claimed", user: updated });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Reward error" });
+  }
+});
+
 app.post('/api/auth/register', async (req, res) => {
   const { email, password } = req.body;
   try {
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({ 
-      data: { email, password: hashed } // referralCode створиться через cuid() автоматично
+      data: { email, password: hashed }
     });
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
     res.json({ token, user });
