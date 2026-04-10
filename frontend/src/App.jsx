@@ -7,7 +7,7 @@ function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [activeTab, setActiveTab] = useState('miner');
-  const [authMode, setAuthMode] = useState('login'); // login або register
+  const [authMode, setAuthMode] = useState('login'); 
   const [formData, setFormData] = useState({ email: '', password: '' });
   
   const [showSpin, setShowSpin] = useState(false);
@@ -29,7 +29,7 @@ function App() {
 
   useEffect(() => { if (token) fetchUser(token); }, [token, fetchUser]);
 
-  // Енергія та пасивка
+  // Енергія та пасивка (візуальне оновлення)
   useEffect(() => {
     const timer = setInterval(() => {
       setUser(p => p ? ({
@@ -63,6 +63,42 @@ function App() {
       const res = await axios.post(`${API_URL}/api/upgrades/buy`, { upgradeId: id }, { headers: { Authorization: `Bearer ${token}` } });
       setUser(res.data.user);
     } catch (e) { alert("Не вистачає коштів!"); }
+  };
+
+  // --- ЛОГІКА КОЛЕСА ФОРТУНИ ---
+  const handleSpin = async () => {
+    if (isSpinning) return;
+    setIsSpinning(true);
+
+    try {
+      const res = await axios.post(`${API_URL}/api/spin`, {}, { 
+        headers: { Authorization: `Bearer ${token}` } 
+      });
+      
+      const { prizeType, winAmount } = res.data;
+
+      // Чекаємо 4 секунди (час анімації в index.css)
+      setTimeout(() => {
+        setIsSpinning(false);
+        setShowSpin(false);
+
+        if (prizeType === 'money') {
+          alert(`Ви виграли $${winAmount}!`);
+        } else if (prizeType === 'autoclick') {
+          alert(`БОНУС: Нараховано$${winAmount} за автоклік!`);
+        } else if (prizeType === 'energy_boost') {
+          alert("Максимальну енергію збільшено!");
+        } else if (prizeType === 'full_energy') {
+          alert(winAmount > 0 ? `Енергія була фулл! Тримай бонус $${winAmount}` : "Енергію повністю відновлено!");
+        }
+
+        fetchUser(token); // Оновлюємо дані з бази
+      }, 4000);
+
+    } catch (e) {
+      alert(e.response?.data?.error || "Помилка колеса");
+      setIsSpinning(false);
+    }
   };
 
   // --- Екрани входу ---
@@ -117,7 +153,6 @@ function App() {
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col items-center p-6 pb-32 overflow-y-auto">
         
-        {/* TAB: MINER */}
         {activeTab === 'miner' && (
           <div className="flex flex-col items-center justify-center h-full w-full">
             <div className="text-center mb-10">
@@ -147,11 +182,10 @@ function App() {
           </div>
         )}
 
-        {/* TAB: SHOP */}
+        {/* SHOP, FRIENDS, PROFILE tabs залишаються без змін */}
         {activeTab === 'upgrades' && (
           <div className="w-full max-w-md space-y-4">
             <h2 className="text-3xl font-black mb-6 uppercase italic">Marketplace</h2>
-            
             <div className="grid grid-cols-1 gap-3">
               {[
                 { id: 'miner_v1', name: 'Nano Bot V1', price: 50, profit: 0.5, icon: '🤖' },
@@ -175,13 +209,11 @@ function App() {
           </div>
         )}
 
-        {/* TAB: FRIENDS */}
         {activeTab === 'partners' && (
           <div className="w-full max-w-md text-center">
             <div className="text-6xl mb-6">👥</div>
             <h2 className="text-3xl font-black mb-2 uppercase">Invite Friends</h2>
             <p className="text-gray-500 text-sm mb-8">Get 10% from their earnings forever!</p>
-            
             <div className="bg-white/5 border border-white/10 p-6 rounded-[2.5rem] mb-6">
               <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Your Referral Link</p>
               <div className="bg-black/50 p-3 rounded-xl text-xs font-mono border border-white/5 break-all">
@@ -195,7 +227,6 @@ function App() {
           </div>
         )}
 
-        {/* TAB: PROFILE */}
         {activeTab === 'profile' && (
           <div className="w-full max-w-md space-y-4">
              <div className="bg-gradient-to-br from-purple-900/40 to-black border border-white/10 p-8 rounded-[3rem] text-center relative overflow-hidden">
@@ -204,18 +235,6 @@ function App() {
                 <h3 className="text-xl font-black mb-1">{user.email.split('@')[0]}</h3>
                 <p className="text-purple-400 text-[10px] font-bold uppercase tracking-widest">{user.league} Champion</p>
              </div>
-
-             <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white/5 border border-white/10 p-5 rounded-[2rem]">
-                   <p className="text-[9px] font-bold text-gray-500 uppercase">Total Profit</p>
-                   <p className="text-lg font-black">${user.totalEarned.toFixed(2)}</p>
-                </div>
-                <div className="bg-white/5 border border-white/10 p-5 rounded-[2rem]">
-                   <p className="text-[9px] font-bold text-gray-500 uppercase">Click Lvl</p>
-                   <p className="text-lg font-black">{user.clickLevel}</p>
-                </div>
-             </div>
-
              <button onClick={() => { localStorage.removeItem('token'); setToken(null); }} className="w-full py-4 text-red-500 font-bold text-xs uppercase tracking-widest">Log Out</button>
           </div>
         )}
@@ -224,33 +243,42 @@ function App() {
 
       {/* Navigation Bar */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-[#111]/90 border border-white/10 h-22 rounded-[3rem] flex justify-around items-center backdrop-blur-2xl z-50 px-2 shadow-2xl">
-         {[
-           { id: 'miner', icon: '⛏️', label: 'Miner' },
-           { id: 'upgrades', icon: '⚡', label: 'Shop' },
-           { id: 'partners', icon: '👥', label: 'Friends' },
-           { id: 'profile', icon: '👤', label: 'Account' }
-         ].map(item => (
-           <button 
-             key={item.id} 
-             onClick={() => setActiveTab(item.id)} 
-             className={`flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all ${activeTab === item.id ? 'bg-white/10 scale-105' : 'opacity-40 hover:opacity-100'}`}
-           >
+          {[
+            { id: 'miner', icon: '⛏️', label: 'Miner' },
+            { id: 'upgrades', icon: '⚡', label: 'Shop' },
+            { id: 'partners', icon: '👥', label: 'Friends' },
+            { id: 'profile', icon: '👤', label: 'Account' }
+          ].map(item => (
+            <button 
+              key={item.id} 
+              onClick={() => setActiveTab(item.id)} 
+              className={`flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all ${activeTab === item.id ? 'bg-white/10 scale-105' : 'opacity-40 hover:opacity-100'}`}
+            >
               <span className="text-xl">{item.icon}</span>
               <span className="text-[9px] font-black uppercase tracking-tighter">{item.label}</span>
-           </button>
-         ))}
+            </button>
+          ))}
       </nav>
 
-      {/* Fortune Wheel Modal */}
+      {/* MODAL КОЛЕСА З АНІМАЦІЄЮ */}
       {showSpin && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="bg-gradient-to-b from-[#111] to-black border border-white/10 w-full max-w-xs rounded-[3.5rem] p-10 text-center shadow-[0_0_50px_rgba(168,85,247,0.2)]">
             <h3 className="text-xl font-black mb-8 uppercase italic tracking-widest">Fortune Wheel</h3>
-            <div className={`text-8xl mb-10 transition-all duration-[3000ms] ease-out ${isSpinning ? 'rotate-[1440deg] scale-110' : ''}`}>🎡</div>
+            
+            {/* Саме колесо */}
+            <div className="relative w-48 h-48 mx-auto mb-10">
+              <div className="absolute top-[-10px] left-1/2 -translate-x-1/2 z-20 text-2xl text-red-500">▼</div>
+              <div className={`w-full h-full rounded-full border-4 border-white/10 flex items-center justify-center text-8xl transition-all ${isSpinning ? 'spinning' : ''}`}
+                   style={{ background: 'conic-gradient(#222 0deg 90deg, #333 90deg 180deg, #222 180deg 270deg, #333 270deg 360deg)' }}>
+                🎡
+              </div>
+            </div>
+
             <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl font-black uppercase text-xs shadow-xl disabled:opacity-30">
                {isSpinning ? 'Spinning...' : 'Spin for Free'}
             </button>
-            <button onClick={() => setShowSpin(false)} className="mt-6 text-gray-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">Close</button>
+            <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">Close</button>
           </div>
         </div>
       )}
