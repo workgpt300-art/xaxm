@@ -34,25 +34,34 @@ const getLeague = (total) => {
 };
 
 const updatePlayerState = async (user) => {
+  // ЗАХИСТ: Якщо немає дати оновлення, просто повертаємо користувача без розрахунків
+  if (!user || !user.updatedAt) return user;
+
   const now = new Date();
   const lastUpdate = new Date(user.updatedAt);
   const secondsPassed = Math.floor((now - lastUpdate) / 1000);
 
+  // Якщо пройшло менше секунди — не чіпаємо базу
   if (secondsPassed <= 0) return user;
 
   const passiveGain = (user.passiveIncome / 3600) * secondsPassed;
   const energyGain = (user.maxEnergy / 900) * secondsPassed;
   const newEnergy = Math.min(user.maxEnergy, user.energy + energyGain);
 
-  return await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      balance: { increment: passiveGain },
-      totalEarned: { increment: passiveGain },
-      energy: newEnergy,
-      updatedAt: now 
-    }
-  });
+  try {
+    return await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        balance: { increment: passiveGain || 0 },
+        totalEarned: { increment: passiveGain || 0 },
+        energy: newEnergy || user.energy,
+        updatedAt: now 
+      }
+    });
+  } catch (e) {
+    console.error("Update State Error:", e.message);
+    return user; // Повертаємо старі дані, якщо запис зайнятий
+  }
 };
 
 const authenticateToken = (req, res, next) => {
@@ -84,7 +93,8 @@ app.post('/api/auth/register', async (req, res) => {
         passiveIncome: 0,
         clickLevel: 1,
         totalEarned: 0,
-        league: "Bronze"
+        league: "Bronze",
+        updatedAt: new Date() // Додаємо початкову дату
       }
     });
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
@@ -99,10 +109,15 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(400).json({ error: "Invalid credentials" });
     }
+    
+    // Використовуємо захищене оновлення
     const updatedUser = await updatePlayerState(user);
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
     res.json({ token, user: updatedUser });
-  } catch (e) { res.status(500).json({ error: "Login failed" }); }
+  } catch (e) { 
+    console.error("Login route error:", e);
+    res.status(500).json({ error: "Login failed" }); 
+  }
 });
 
 app.get('/api/me', authenticateToken, async (req, res) => {
@@ -118,7 +133,8 @@ app.post('/api/user/tap', authenticateToken, async (req, res) => {
   
   userLocks.add(req.user.id);
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    let user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    user = await updatePlayerState(user);
     
     if (!user || user.energy < 1) {
       return res.status(400).json({ error: "No energy" });
@@ -144,7 +160,6 @@ app.post('/api/user/tap', authenticateToken, async (req, res) => {
     console.error("Database Error:", e.message);
     res.status(500).json({ error: "Server busy" });
   } finally {
-    // Невелика затримка перед зняттям блоку для стабільності бази
     setTimeout(() => userLocks.delete(req.user.id), 50);
   }
 });
