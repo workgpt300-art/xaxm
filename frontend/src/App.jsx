@@ -21,7 +21,7 @@ const translations = {
     startQuiz: "Start Quiz", done: "Done", claim: "Claim", invite: "Invite Friends",
     inviteDesc: "Get 10% from friend's earnings", noFriends: "No friends yet",
     logout: "Log Out", copy: "Copy", sync: "SYNCING...", nextLeague: "Next League at",
-    combo: "COMBO", dailyCheck: "Daily Reward", bonus: "COMBO BONUS"
+    combo: "COMBO", dailyCheck: "Daily Reward", bonus: "COMBO BONUS", copied: "Copied!", lowBalance: "Low balance!"
   },
   ua: {
     miner: "Майнер", tasks: "Завдання", shop: "Магазин", friends: "Друзі", profile: "Профіль",
@@ -31,7 +31,7 @@ const translations = {
     startQuiz: "Почати тест", done: "Готово", claim: "Забрати", invite: "Запросити друзів",
     inviteDesc: "Отримуй 10% від заробітку друзів", noFriends: "Друзів поки немає",
     logout: "Вийти", copy: "Копіювати", sync: "СИНХРОНІЗАЦІЯ...", nextLeague: "Наступна ліга через",
-    combo: "КОМБО", dailyCheck: "Щоденна нагорода", bonus: "КОМБО БОНУС"
+    combo: "КОМБО", dailyCheck: "Щоденна нагорода", bonus: "КОМБО БОНУС", copied: "Скопійовано!", lowBalance: "Недостатньо коштів!"
   }
 };
 
@@ -41,7 +41,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('miner');
   const [authMode, setAuthMode] = useState('login'); 
   const [formData, setFormData] = useState({ email: '', password: '' });
-  const [lang, setLang] = useState('ua');
+  const [lang, setLang] = useState(localStorage.getItem('lang') || 'ua');
   const [showSpin, setShowSpin] = useState(false);
   const [showLeagueModal, setShowLeagueModal] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
@@ -53,8 +53,14 @@ function App() {
   const [penalty, setPenalty] = useState(0); 
   const [combo, setCombo] = useState(0);
   const [lastTap, setLastTap] = useState(0);
+  const [notif, setNotif] = useState(null);
 
   const t = translations[lang];
+
+  const showMessage = (msg) => {
+    setNotif(msg);
+    setTimeout(() => setNotif(null), 2000);
+  };
 
   const [availableTasks, setAvailableTasks] = useState([
     { id: 'tg_join', title: 'Join Telegram', reward: 50, icon: '✈️', type: 'link', link: 'https://t.me/EarnIO_News', completed: false },
@@ -63,10 +69,7 @@ function App() {
     { id: 'wheel_spin', title: 'Spin the Wheel', reward: 25, icon: '🎡', type: 'action', completed: false }
   ]);
 
-  // Розрахунок додаткового бонусу за комбо (кожні 25 комбо = +0.25)
-  const comboBonus = useMemo(() => {
-    return Math.floor(combo / 25) * 0.25;
-  }, [combo]);
+  const comboBonus = useMemo(() => Math.floor(combo / 25) * 0.25, [combo]);
 
   const leagueInfo = useMemo(() => {
     if (!user) return null;
@@ -75,6 +78,10 @@ function App() {
     const next = LEAGUES[nextIdx] || null;
     return { current, next };
   }, [user]);
+
+  useEffect(() => {
+    localStorage.setItem('lang', lang);
+  }, [lang]);
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('remembered_email');
@@ -131,19 +138,18 @@ function App() {
       localStorage.setItem('remembered_email', formData.email);
       localStorage.setItem('remembered_password', formData.password);
       setToken(res.data.token);
-    } catch (e) { alert(e.response?.data?.error || "Auth Error"); }
+    } catch (e) { showMessage(e.response?.data?.error || "Auth Error"); }
   };
 
   const handleTap = async (e) => {
     if (!user || user.energy < 1) return;
-    if (window.navigator.vibrate) window.navigator.vibrate(10);
+    if (window.navigator.vibrate) window.navigator.vibrate(12);
 
     const now = Date.now();
     setLastTap(now);
     const newCombo = combo + 1;
     setCombo(newCombo);
 
-    // Розрахунок прибутку за клік: базовий + комбо бонус
     const baseClick = (user.clickLevel * 0.01);
     const currentBonus = Math.floor(newCombo / 25) * 0.25;
     const totalClickValue = baseClick + currentBonus;
@@ -170,7 +176,6 @@ function App() {
       totalClicks: (p.totalClicks || 0) + 1
     }));
     
-    // Відправляємо тап на сервер (можна додати бонус і в логіку бекенду)
     await axios.post(`${API_URL}/api/user/tap`, { 
         bonus: currentBonus 
     }, { headers: { Authorization: `Bearer ${token}` } });
@@ -184,6 +189,7 @@ function App() {
       );
       if (res.data.user) setUser(res.data.user);
       setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
+      showMessage(`+${reward} Reward!`);
     } catch (e) {
       if (e.response?.status === 400) {
         setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
@@ -195,10 +201,10 @@ function App() {
     if (task.completed) return;
     if (task.id === 'earn_350') {
       if ((user.totalEarned || user.balance) >= 350) completeTask(task.id, task.reward);
-      else alert(`Need $${(350 - (user.totalEarned || 0)).toFixed(2)} more!`);
+      else showMessage(`Need $${(350 - (user.totalEarned || 0)).toFixed(2)} more!`);
     } else if (task.id === 'click_master') {
       if (user.clickLevel >= 5) completeTask(task.id, task.reward);
-      else alert(`Upgrade Multi-Tap to LVL 5!`);
+      else showMessage(`Upgrade Multi-Tap to LVL 5!`);
     } else if (task.type === 'link') {
       window.open(task.link, '_blank');
       setTimeout(() => completeTask(task.id, task.reward), 2000);
@@ -210,6 +216,7 @@ function App() {
   const handleQuizAnswer = async (index) => {
     const question = quizData[currentQuestion];
     if (index === question.correct) {
+      if (window.navigator.vibrate) window.navigator.vibrate([10, 50, 10]);
       const finalReward = Math.max(0.1, question.reward - penalty);
       try {
         const res = await axios.post(`${API_URL}/api/user/reward`, 
@@ -225,6 +232,7 @@ function App() {
         else setQuizFinished(true);
       }
     } else {
+      if (window.navigator.vibrate) window.navigator.vibrate(200);
       setPenalty(prev => (prev === 0 ? 1.0 : prev === 1.0 ? 2.5 : prev + 2.0));
     }
   };
@@ -233,7 +241,8 @@ function App() {
     try {
       const res = await axios.post(`${API_URL}/api/upgrades/buy`, { upgradeId: id }, { headers: { Authorization: `Bearer ${token}` } });
       setUser(res.data.user);
-    } catch (e) { alert(e.response?.data?.error || "Low balance!"); }
+      showMessage("Upgrade Success!");
+    } catch (e) { showMessage(t.lowBalance); }
   };
 
   const handleSpin = async () => {
@@ -244,21 +253,21 @@ function App() {
       setTimeout(() => {
         setIsSpinning(false);
         setShowSpin(false);
-        alert(`Win: $${res.data.win}!`);
+        showMessage(`Win: $${res.data.win}!`);
         const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
         if (spinTask && !spinTask.completed) completeTask('wheel_spin', spinTask.reward);
         fetchUser(token);
       }, 4000);
     } catch (e) { 
         setIsSpinning(false); 
-        alert(e.response?.data?.error || "Error"); 
+        showMessage(e.response?.data?.error || "Error"); 
     }
   };
 
   if (!token) return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col items-center justify-center p-6 font-sans overflow-hidden">
       <div className="absolute inset-0 bg-gradient-to-b from-blue-900/20 to-transparent pointer-events-none"></div>
-      <div className="glass-card w-full max-w-md p-8 rounded-[2.5rem] neon-border-red relative z-10">
+      <div className="glass-card w-full max-w-md p-8 rounded-[2.5rem] neon-border-red relative z-10 animate-in fade-in zoom-in-90 duration-500">
         <h2 className="text-4xl font-black text-center mb-8 uppercase tracking-tighter italic">
           {authMode === 'login' ? t.welcome : t.create}
         </h2>
@@ -285,6 +294,13 @@ function App() {
 
   return (
     <div className="h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden select-none font-sans">
+      {/* Toast Notification */}
+      {notif && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-white text-black px-6 py-3 rounded-full font-black text-[10px] uppercase shadow-[0_0_30px_rgba(255,255,255,0.4)] animate-in slide-in-from-top-10">
+          {notif}
+        </div>
+      )}
+
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-600/10 blur-[120px] rounded-full"></div>
 
@@ -295,7 +311,7 @@ function App() {
       ))}
 
       <header className="px-5 py-4 flex justify-between items-center z-10 backdrop-blur-xl bg-black/40 border-b border-white/5">
-        <button onClick={() => setShowLeagueModal(true)} className="flex items-center gap-2 glass-card pr-4 pl-1.5 py-1.5 rounded-full border border-white/10 active:scale-95 transition-all">
+        <button onClick={() => { setShowLeagueModal(true); if(window.navigator.vibrate) window.navigator.vibrate(5); }} className="flex items-center gap-2 glass-card pr-4 pl-1.5 py-1.5 rounded-full border border-white/10 active:scale-95 transition-all">
             <div className={`w-7 h-7 rounded-full bg-gradient-to-tr ${leagueInfo?.current?.color} shadow-lg`}></div>
             <div className="flex flex-col items-start leading-tight">
               <span className="text-[9px] font-black uppercase tracking-tighter">{user.league}</span>
@@ -318,10 +334,10 @@ function App() {
 
       <main className="flex-1 overflow-y-auto px-6 pt-4 pb-32">
         {activeTab === 'miner' && (
-          <div className="flex flex-col items-center justify-between min-h-full py-2 animate-in fade-in zoom-in-95">
+          <div className="flex flex-col items-center justify-between min-h-full py-2 animate-in fade-in zoom-in-95 duration-300">
             <div className="text-center">
               <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.4em] mb-1">{t.totalBal}</p>
-              <h1 className="text-6xl font-black tracking-tighter drop-shadow-2xl">${(user.balance || 0).toFixed(3)}</h1>
+              <h1 className="text-6xl font-black tracking-tighter drop-shadow-2xl animate-pulse-subtle">${(user.balance || 0).toFixed(3)}</h1>
               
               <div className="flex flex-col gap-2 mt-3 items-center">
                   <div className="inline-block px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-black uppercase tracking-widest">
@@ -336,9 +352,9 @@ function App() {
             </div>
 
             <button onPointerDown={handleTap} className="relative w-64 h-64 sm:w-72 sm:h-72 my-8 active:scale-[0.92] transition-all duration-75 group touch-none">
-              <div className={`absolute inset-0 blur-[60px] rounded-full transition-colors ${combo >= 25 ? 'bg-yellow-500/40' : 'bg-blue-500/20'}`}></div>
-              <div className={`w-full h-full bg-gradient-to-b from-[#1a1a24] to-[#050505] rounded-full border-[6px] transition-colors ${combo >= 25 ? 'border-yellow-500/50 shadow-[0_0_30px_rgba(234,179,8,0.3)]' : 'border-white/10'} shadow-2xl flex items-center justify-center relative z-10 overflow-hidden`}>
-                <span className={`text-8xl transition-transform ${combo >= 25 ? 'brightness-125 scale-110' : ''}`}>💎</span>
+              <div className={`absolute inset-0 blur-[60px] rounded-full transition-colors duration-500 ${combo >= 25 ? 'bg-yellow-500/40' : 'bg-blue-500/20'}`}></div>
+              <div className={`w-full h-full bg-gradient-to-b from-[#1a1a24] to-[#050505] rounded-full border-[6px] transition-all duration-300 ${combo >= 25 ? 'border-yellow-500 shadow-[0_0_50px_rgba(234,179,8,0.4)] scale-105' : 'border-white/10'} shadow-2xl flex items-center justify-center relative z-10 overflow-hidden`}>
+                <span className={`text-8xl transition-transform duration-300 ${combo >= 25 ? 'brightness-125 scale-125' : 'group-active:scale-90'}`}>💎</span>
               </div>
             </button>
 
@@ -355,18 +371,19 @@ function App() {
         )}
 
         {activeTab === 'tasks' && (
-          <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8">
+          <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500">
             <h2 className="text-3xl font-black italic uppercase tracking-tighter">{t.tasks}</h2>
-            <div className="glass-card p-5 rounded-[2.5rem] border border-yellow-500/30 bg-yellow-500/5 flex justify-between items-center">
+            <div className="glass-card p-5 rounded-[2.5rem] border border-yellow-500/30 bg-yellow-500/5 flex justify-between items-center group">
                 <div className="flex items-center gap-3">
-                    <span className="text-2xl">🎁</span>
+                    <span className="text-2xl group-hover:scale-125 transition-transform">🎁</span>
                     <div>
                         <h4 className="font-black text-xs uppercase">{t.dailyCheck}</h4>
                         <span className="text-[9px] text-yellow-500 font-bold uppercase tracking-tighter">Available every 24h</span>
                     </div>
                 </div>
-                <button className="bg-yellow-500 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase">Claim</button>
+                <button className="bg-yellow-500 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase active:scale-95 transition-all">Claim</button>
             </div>
+            {/* QUIZ SECTION */}
             <div className="relative overflow-hidden glass-card p-6 rounded-[2.5rem] neon-border-blue">
                 <span className="bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase">{t.daily}</span>
                 <h3 className="text-xl font-black mt-2 mb-1">{t.quizTitle}</h3>
@@ -377,7 +394,7 @@ function App() {
             </div>
             <div className="space-y-3">
               {availableTasks.map(task => (
-                <div key={task.id} className="glass-card p-4 rounded-[2rem] flex justify-between items-center border border-white/5">
+                <div key={task.id} className="glass-card p-4 rounded-[2rem] flex justify-between items-center border border-white/5 hover:border-white/20 transition-all">
                   <div className="flex items-center gap-4">
                     <div className="text-2xl glass-card w-12 h-12 flex items-center justify-center rounded-2xl bg-white/5 border border-white/10">{task.icon}</div>
                     <div>
@@ -395,14 +412,14 @@ function App() {
         )}
 
         {activeTab === 'upgrades' && (
-          <div className="w-full max-w-md mx-auto space-y-4 animate-in slide-in-from-bottom-8">
+          <div className="w-full max-w-md mx-auto space-y-4 animate-in slide-in-from-bottom-8 duration-500">
             <h2 className="text-3xl font-black italic uppercase tracking-tighter">{t.shop}</h2>
             {[
               { id: 'miner_v1', name: 'Micro Miner', price: 50, desc: '+0.50 profit/hr', icon: '⚡' },
               { id: 'miner_v2', name: 'Advanced Rig', price: 250, desc: '+2.50 profit/hr', icon: '🚀' },
               { id: 'multitap', name: 'Multi-Tap', price: 100, desc: '+0.01 per click', icon: '🖱️' }
             ].map(item => (
-              <div key={item.id} className="glass-card p-5 rounded-[2rem] flex justify-between items-center border border-white/5">
+              <div key={item.id} className="glass-card p-5 rounded-[2rem] flex justify-between items-center border border-white/5 hover:bg-white/5 transition-all">
                 <div className="flex items-center gap-4">
                   <div className="text-3xl glass-card w-14 h-14 flex items-center justify-center rounded-2xl bg-white/5 border border-white/10">{item.icon}</div>
                   <div>
@@ -419,13 +436,14 @@ function App() {
         )}
 
         {activeTab === 'partners' && (
-          <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8">
-             <div className="glass-card p-8 rounded-[3rem] text-center neon-border-red">
-                <h2 className="text-2xl font-black mb-2 uppercase tracking-tighter">{t.invite}</h2>
-                <p className="text-gray-400 text-[10px] mb-6 font-bold">{t.inviteDesc}</p>
-                <div className="bg-black/60 p-4 rounded-2xl border border-white/10 flex justify-between items-center shadow-inner">
+          <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500">
+             <div className="glass-card p-8 rounded-[3rem] text-center neon-border-red relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">🤝</div>
+                <h2 className="text-2xl font-black mb-2 uppercase tracking-tighter relative z-10">{t.invite}</h2>
+                <p className="text-gray-400 text-[10px] mb-6 font-bold relative z-10">{t.inviteDesc}</p>
+                <div className="bg-black/60 p-4 rounded-2xl border border-white/10 flex justify-between items-center shadow-inner relative z-10">
                   <code className="text-red-400 font-black text-base tracking-widest">{user.referralCode || '...'}</code>
-                  <button onClick={() => { navigator.clipboard.writeText(user.referralCode); alert("Copied!"); }} className="text-[10px] font-black uppercase text-white bg-red-500/20 px-4 py-2 rounded-xl border border-red-500/20">{t.copy}</button>
+                  <button onClick={() => { navigator.clipboard.writeText(user.referralCode); showMessage(t.copied); }} className="text-[10px] font-black uppercase text-white bg-red-500/20 px-4 py-2 rounded-xl border border-red-500/20 active:scale-90 transition-all">{t.copy}</button>
                 </div>
              </div>
              <div className="text-center py-12 opacity-20">
@@ -436,9 +454,9 @@ function App() {
         )}
 
         {activeTab === 'profile' && (
-          <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8">
+          <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8 duration-500">
             <div className="glass-card p-8 rounded-[3rem] text-center">
-              <div className="w-20 h-20 bg-gradient-to-tr from-red-600 via-purple-600 to-blue-600 rounded-[2rem] mx-auto mb-4 flex items-center justify-center text-3xl shadow-2xl border-2 border-white/10 rotate-3">👤</div>
+              <div className="w-20 h-20 bg-gradient-to-tr from-red-600 via-purple-600 to-blue-600 rounded-[2rem] mx-auto mb-4 flex items-center justify-center text-3xl shadow-2xl border-2 border-white/10 rotate-3 animate-float">👤</div>
               <h3 className="text-xl font-black tracking-tight">{user.email?.split('@')[0]}</h3>
               <p className="text-gray-500 text-[9px] font-black uppercase tracking-[0.4em] mt-1 opacity-50">ID: {user.id?.slice(-8)}</p>
               <div className="mt-6">
@@ -478,8 +496,8 @@ function App() {
             { id: 'partners', icon: '👥', label: t.friends },
             { id: 'profile', icon: '👤', label: t.profile }
           ].map(item => (
-            <button key={item.id} onClick={() => setActiveTab(item.id)} className={`flex flex-col items-center justify-center gap-1 w-16 h-16 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'bg-white/10 scale-105 shadow-lg' : 'opacity-30'}`}>
-              <span className="text-xl">{item.icon}</span>
+            <button key={item.id} onClick={() => { setActiveTab(item.id); if(window.navigator.vibrate) window.navigator.vibrate(5); }} className={`flex flex-col items-center justify-center gap-1 w-16 h-16 rounded-2xl transition-all duration-300 ${activeTab === item.id ? 'bg-white/10 scale-105 shadow-lg' : 'opacity-30 hover:opacity-50'}`}>
+              <span className={`text-xl transition-transform ${activeTab === item.id ? 'scale-110' : ''}`}>{item.icon}</span>
               <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
             </button>
           ))}
@@ -487,8 +505,8 @@ function App() {
 
       {/* MODALS */}
       {showQuiz && (
-        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-6">
-          <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 relative neon-border-blue shadow-2xl">
+        <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 relative neon-border-blue shadow-2xl animate-in zoom-in-95">
             {!quizFinished ? (
               <>
                 <div className="text-center mb-6">
@@ -502,7 +520,7 @@ function App() {
                 </div>
                 <div className="space-y-2">
                   {quizData[currentQuestion]?.options.map((opt, idx) => (
-                    <button key={idx} onClick={() => handleQuizAnswer(idx)} className="w-full py-4 bg-white/5 border border-white/10 rounded-xl font-bold text-xs hover:bg-white hover:text-black transition-all">
+                    <button key={idx} onClick={() => handleQuizAnswer(idx)} className="w-full py-4 bg-white/5 border border-white/10 rounded-xl font-bold text-xs hover:bg-white hover:text-black transition-all active:scale-95">
                       {opt}
                     </button>
                   ))}
@@ -510,9 +528,9 @@ function App() {
               </>
             ) : (
               <div className="text-center py-6">
-                <div className="text-7xl mb-4">🏆</div>
+                <div className="text-7xl mb-4 animate-bounce">🏆</div>
                 <h3 className="text-2xl font-black mb-6 uppercase italic tracking-tighter">Excellent!</h3>
-                <button onClick={() => setShowQuiz(false)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs">Close</button>
+                <button onClick={() => setShowQuiz(false)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs active:scale-95 transition-all">Close</button>
               </div>
             )}
           </div>
@@ -520,15 +538,15 @@ function App() {
       )}
 
       {showLeagueModal && (
-        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6" onClick={() => setShowLeagueModal(false)}>
-            <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 shadow-2xl border border-white/5" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300" onClick={() => setShowLeagueModal(false)}>
+            <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 shadow-2xl border border-white/5 animate-in slide-in-from-bottom-10" onClick={e => e.stopPropagation()}>
                <h2 className="text-2xl font-black mb-8 italic uppercase text-center tracking-tighter">Leagues</h2>
                <div className="space-y-3">
                  {LEAGUES.map(l => {
                    const isCurrent = user.league === l.name;
                    const isLocked = (user.totalEarned || 0) < l.min;
                    return (
-                     <div key={l.name} className={`p-4 rounded-[2rem] border transition-all ${isCurrent ? 'bg-white text-black border-white shadow-xl' : 'bg-white/5 border-white/10 opacity-40'}`}>
+                     <div key={l.name} className={`p-4 rounded-[2rem] border transition-all ${isCurrent ? 'bg-white text-black border-white shadow-xl scale-105' : 'bg-white/5 border-white/10 opacity-40'}`}>
                         <div className="flex justify-between items-center">
                             <div className="flex items-center gap-3">
                               <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${l.color}`}></div>
@@ -545,17 +563,17 @@ function App() {
       )}
 
       {showSpin && (
-        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6">
-          <div className="glass-card w-full max-w-sm rounded-[3.5rem] p-10 text-center neon-border-blue relative overflow-hidden">
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+          <div className="glass-card w-full max-w-sm rounded-[3.5rem] p-10 text-center neon-border-blue relative overflow-hidden animate-in zoom-in-95">
             <h3 className="text-xl font-black mb-8 uppercase italic tracking-tighter">Fortune Wheel</h3>
             <div className="relative mb-10 flex justify-center">
                 <div className={`text-8xl transition-all duration-[4000ms] ease-out ${isSpinning ? 'rotate-[3600deg]' : 'scale-100'}`}>🎡</div>
                 <div className="absolute top-[-15px] text-2xl animate-bounce">▼</div>
             </div>
-            <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-white text-black rounded-[2rem] font-black uppercase text-xs active:scale-95 transition-all shadow-2xl">
+            <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-white text-black rounded-[2rem] font-black uppercase text-xs active:scale-95 transition-all shadow-2xl disabled:opacity-50">
                 {isSpinning ? 'SPINNING...' : 'Spin Wheel'}
             </button>
-            <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-black text-[10px] uppercase tracking-widest">Close</button>
+            <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-black text-[10px] uppercase tracking-widest hover:text-white transition-colors">Close</button>
           </div>
         </div>
       )}
