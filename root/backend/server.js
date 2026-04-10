@@ -4,11 +4,18 @@ import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+// Оптимізована ініціалізація Prisma для усунення помилок 500
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL + "&connection_limit=3&pool_timeout=20",
+    },
+  },
+});
+
 const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 
-// Налаштування CORS для Render та локальної розробки
 app.use(cors({ 
   origin: '*', 
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], 
@@ -16,9 +23,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// --- СИСТЕМА ЗАХИСТУ ТА ЛОГІКИ ---
-
-// Тимчасове блокування запиту, щоб уникнути "гонки" (Race Condition)
 const userLocks = new Set();
 
 const getLeague = (total) => {
@@ -29,7 +33,6 @@ const getLeague = (total) => {
   return "Bronze";
 };
 
-// Функція оновлення стану гравця (Енергія + Пасивний дохід)
 const updatePlayerState = async (user) => {
   const now = new Date();
   const lastUpdate = new Date(user.updatedAt);
@@ -37,10 +40,7 @@ const updatePlayerState = async (user) => {
 
   if (secondsPassed <= 0) return user;
 
-  // Нарахування пасивного доходу за пройдений час
   const passiveGain = (user.passiveIncome / 3600) * secondsPassed;
-  
-  // Відновлення енергії (повне за 15 хв = 900 сек)
   const energyGain = (user.maxEnergy / 900) * secondsPassed;
   const newEnergy = Math.min(user.maxEnergy, user.energy + energyGain);
 
@@ -50,7 +50,7 @@ const updatePlayerState = async (user) => {
       balance: { increment: passiveGain },
       totalEarned: { increment: passiveGain },
       energy: newEnergy,
-      updatedAt: now // Обов'язково оновлюємо дату
+      updatedAt: now 
     }
   });
 };
@@ -67,7 +67,7 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// --- МАРШРУТИ АВТОРИЗАЦІЇ ---
+// --- МАРШРУТИ ---
 
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -105,8 +105,6 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Login failed" }); }
 });
 
-// --- ІГРОВІ МАРШРУТИ ---
-
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
@@ -116,16 +114,13 @@ app.get('/api/me', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/user/tap', authenticateToken, async (req, res) => {
-  // Якщо запит вже обробляється для цього юзера — відхиляємо новий
   if (userLocks.has(req.user.id)) return res.status(429).json({ error: "Too fast" });
   
   userLocks.add(req.user.id);
   try {
-    let user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    user = await updatePlayerState(user);
-
-    if (user.energy < 1) {
-      userLocks.delete(req.user.id);
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    
+    if (!user || user.energy < 1) {
       return res.status(400).json({ error: "No energy" });
     }
 
@@ -139,15 +134,18 @@ app.post('/api/user/tap', authenticateToken, async (req, res) => {
         totalEarned: { increment: clickValue },
         totalClicks: { increment: 1 },
         energy: { decrement: 1 },
-        league: getLeague(user.totalEarned + clickValue)
+        league: getLeague(user.totalEarned + clickValue),
+        updatedAt: new Date()
       }
     });
 
     res.json({ user: updatedUser });
   } catch (e) {
-    res.status(500).json({ error: "Tap failed" });
+    console.error("Database Error:", e.message);
+    res.status(500).json({ error: "Server busy" });
   } finally {
-    userLocks.delete(req.user.id);
+    // Невелика затримка перед зняттям блоку для стабільності бази
+    setTimeout(() => userLocks.delete(req.user.id), 50);
   }
 });
 
@@ -172,7 +170,8 @@ app.post('/api/upgrades/buy', authenticateToken, async (req, res) => {
       data: {
         balance: { decrement: item.cost },
         passiveIncome: { increment: item.passive },
-        clickLevel: { increment: item.click }
+        clickLevel: { increment: item.click },
+        updatedAt: new Date()
       }
     });
 
@@ -189,7 +188,8 @@ app.post('/api/user/reward', authenticateToken, async (req, res) => {
       where: { id: req.user.id },
       data: {
         balance: { increment: amount },
-        totalEarned: { increment: amount }
+        totalEarned: { increment: amount },
+        updatedAt: new Date()
       }
     });
     res.json({ user: updatedUser });
@@ -199,7 +199,6 @@ app.post('/api/user/reward', authenticateToken, async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// Правильне закриття бази даних при зупинці сервера
 process.on('SIGINT', async () => {
   await prisma.$disconnect();
   process.exit(0);
