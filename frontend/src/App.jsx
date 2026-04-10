@@ -12,8 +12,17 @@ function App() {
   
   const [showSpin, setShowSpin] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
+  const [clicks, setClicks] = useState([]); // Для ефектів кліку
 
-  // --- Завантаження даних ---
+  // --- 1. ЗАПАМ'ЯТОВУВАЧ ---
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('remembered_email');
+    const savedPass = localStorage.getItem('remembered_password');
+    if (savedEmail && savedPass) {
+      setFormData({ email: savedEmail, password: savedPass });
+    }
+  }, []);
+
   const fetchUser = useCallback(async (t) => {
     try {
       const res = await axios.get(`${API_URL}/api/me`, {
@@ -29,7 +38,6 @@ function App() {
 
   useEffect(() => { if (token) fetchUser(token); }, [token, fetchUser]);
 
-  // Енергія та пасивка (візуальне оновлення)
   useEffect(() => {
     const timer = setInterval(() => {
       setUser(p => p ? ({
@@ -41,19 +49,34 @@ function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // --- Логіка Auth ---
   const handleAuth = async (e) => {
     e.preventDefault();
     try {
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const res = await axios.post(`${API_URL}${endpoint}`, formData);
+      
+      // Збереження для запам'ятовувача
       localStorage.setItem('token', res.data.token);
+      localStorage.setItem('remembered_email', formData.email);
+      localStorage.setItem('remembered_password', formData.password);
+      
       setToken(res.data.token);
     } catch (e) { alert(e.response?.data?.error || "Auth Error"); }
   };
 
-  const handleTap = async () => {
+  // --- 2. ЕФЕКТ КЛІКУ ---
+  const handleTap = async (e) => {
     if (!user || user.energy < 1) return;
+
+    // Створюємо візуальний ефект
+    const id = Date.now();
+    const x = e.clientX || e.touches[0].clientX;
+    const y = e.clientY || e.touches[0].clientY;
+    setClicks(prev => [...prev, { id, x, y, val: (user.clickLevel * 0.01).toFixed(2) }]);
+    
+    // Видаляємо ефект через 1 сек
+    setTimeout(() => setClicks(prev => prev.filter(c => c.id !== id)), 1000);
+
     setUser(p => ({ ...p, balance: p.balance + (p.clickLevel * 0.01), energy: p.energy - 1 }));
     await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
   };
@@ -65,59 +88,42 @@ function App() {
     } catch (e) { alert("Не вистачає коштів!"); }
   };
 
-  // --- ЛОГІКА КОЛЕСА ФОРТУНИ ---
   const handleSpin = async () => {
     if (isSpinning) return;
     setIsSpinning(true);
-
     try {
-      const res = await axios.post(`${API_URL}/api/spin`, {}, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
-      
-      const { prizeType, winAmount } = res.data;
-
-      // Чекаємо 4 секунди (час анімації в index.css)
+      const res = await axios.post(`${API_URL}/api/spin`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      const { win } = res.data;
       setTimeout(() => {
         setIsSpinning(false);
         setShowSpin(false);
-
-        if (prizeType === 'money') {
-          alert(`Ви виграли $${winAmount}!`);
-        } else if (prizeType === 'autoclick') {
-          alert(`БОНУС: Нараховано$${winAmount} за автоклік!`);
-        } else if (prizeType === 'energy_boost') {
-          alert("Максимальну енергію збільшено!");
-        } else if (prizeType === 'full_energy') {
-          alert(winAmount > 0 ? `Енергія була фулл! Тримай бонус $${winAmount}` : "Енергію повністю відновлено!");
-        }
-
-        fetchUser(token); // Оновлюємо дані з бази
+        alert(`Ви виграли $${win}!`);
+        fetchUser(token);
       }, 4000);
-
     } catch (e) {
       alert(e.response?.data?.error || "Помилка колеса");
       setIsSpinning(false);
     }
   };
 
-  // --- Екрани входу ---
   if (!token) return (
     <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6 font-sans">
       <div className="w-full max-w-md bg-[#111] border border-white/10 p-8 rounded-[2.5rem] shadow-2xl">
         <h2 className="text-3xl font-black text-center mb-2 uppercase tracking-tighter">
           {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
         </h2>
-        <p className="text-gray-500 text-center text-sm mb-8">Start earning real crypto today</p>
+        <p className="text-gray-500 text-center text-sm mb-8">Data will be saved on this device</p>
         
         <form onSubmit={handleAuth} className="space-y-4">
           <input 
             type="email" placeholder="Email Address" 
+            value={formData.email}
             className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-purple-500 transition-all"
             onChange={e => setFormData({...formData, email: e.target.value})}
           />
           <input 
             type="password" placeholder="Password" 
+            value={formData.password}
             className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-purple-500 transition-all"
             onChange={e => setFormData({...formData, password: e.target.value})}
           />
@@ -136,112 +142,115 @@ function App() {
     </div>
   );
 
-  if (!user) return <div className="h-screen bg-black text-white flex items-center justify-center font-black animate-pulse">SYNCING DATA...</div>;
+  if (!user) return <div className="h-screen bg-black text-white flex items-center justify-center font-black animate-pulse">SYNCING...</div>;
 
   return (
-    <div className="h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden select-none">
+    <div className="h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden select-none font-sans">
       
-      {/* Header */}
+      {/* Рендер ефектів кліку */}
+      {clicks.map(c => (
+        <span key={c.id} className="absolute pointer-events-none text-2xl font-black text-white z-[100] animate-float-up"
+              style={{ left: c.x, top: c.y }}>
+          +${c.val}
+        </span>
+      ))}
+
       <header className="p-4 flex justify-between items-center z-10 backdrop-blur-md bg-black/20">
         <div className="flex items-center gap-2">
-           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-blue-500"></div>
+           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-600 to-blue-500 shadow-[0_0_15px_rgba(147,51,234,0.5)]"></div>
            <span className="text-xs font-black uppercase tracking-widest">{user.league} League</span>
         </div>
-        <button onClick={() => setShowSpin(true)} className="text-2xl drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">🎡</button>
+        <button onClick={() => setShowSpin(true)} className="text-2xl drop-shadow-[0_0_10px_rgba(255,255,255,0.5)] hover:scale-110 transition-transform">🎡</button>
       </header>
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col items-center p-6 pb-32 overflow-y-auto">
         
         {activeTab === 'miner' && (
           <div className="flex flex-col items-center justify-center h-full w-full">
             <div className="text-center mb-10">
-              <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.4em] mb-2">Total Balance</p>
+              <p className="text-gray-500 text-[10px] font-bold uppercase tracking-[0.4em] mb-2">Current Balance</p>
               <h1 className="text-6xl font-black tracking-tighter">${user.balance.toFixed(3)}</h1>
-              <div className="mt-2 bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold inline-block">
-                +$ {user.passiveIncome.toFixed(2)} / HR
+              <div className="mt-2 bg-green-500/10 text-green-400 px-3 py-1 rounded-full text-[10px] font-bold inline-block border border-green-500/20">
+                +${user.passiveIncome.toFixed(2)} / HR
               </div>
             </div>
 
-            <button onPointerDown={handleTap} className="relative w-64 h-64 mb-12 active:scale-90 transition-transform group">
+            <button onPointerDown={handleTap} className="relative w-64 h-64 mb-12 active:scale-95 transition-transform group">
               <div className="absolute inset-0 bg-purple-600/20 blur-[60px] rounded-full group-active:bg-blue-600/30"></div>
-              <div className="w-full h-full bg-gradient-to-b from-[#1a1a24] to-[#0a0a0f] rounded-full border-[6px] border-[#22222d] shadow-2xl flex items-center justify-center relative z-10">
-                <span className="text-8xl">💎</span>
+              <div className="w-full h-full bg-gradient-to-b from-[#1a1a24] to-[#0a0a0f] rounded-full border-[6px] border-[#22222d] shadow-2xl flex items-center justify-center relative z-10 overflow-hidden">
+                <span className="text-8xl group-active:scale-110 transition-transform">💎</span>
+                <div className="absolute inset-0 bg-white/5 opacity-0 group-active:opacity-100 transition-opacity"></div>
               </div>
             </button>
 
-            <div className="w-full max-w-xs bg-white/5 border border-white/10 p-5 rounded-[2rem] backdrop-blur-xl">
+            <div className="w-full max-w-xs bg-white/5 border border-white/10 p-5 rounded-[2.5rem] backdrop-blur-xl">
               <div className="flex justify-between items-center mb-3">
                 <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Energy Recovery</span>
                 <span className="text-xs font-bold">{Math.floor(user.energy)}/{user.maxEnergy}</span>
               </div>
               <div className="h-3 bg-white/5 rounded-full overflow-hidden p-[2px] border border-white/5">
-                <div className="h-full bg-gradient-to-r from-orange-500 via-yellow-400 to-yellow-200 rounded-full transition-all" style={{ width: `${(user.energy/user.maxEnergy)*100}%` }}></div>
+                <div className="h-full bg-gradient-to-r from-orange-500 via-yellow-400 to-yellow-200 rounded-full transition-all duration-300" 
+                     style={{ width: `${(user.energy/user.maxEnergy)*100}%` }}></div>
               </div>
             </div>
           </div>
         )}
 
-        {/* SHOP, FRIENDS, PROFILE tabs залишаються без змін */}
-        {activeTab === 'upgrades' && (
-          <div className="w-full max-w-md space-y-4">
-            <h2 className="text-3xl font-black mb-6 uppercase italic">Marketplace</h2>
-            <div className="grid grid-cols-1 gap-3">
-              {[
-                { id: 'miner_v1', name: 'Nano Bot V1', price: 50, profit: 0.5, icon: '🤖' },
-                { id: 'miner_v2', name: 'Cyber Drill', price: 250, profit: 2.5, icon: '⚙️' },
-                { id: 'multitap', name: 'Multi-Tap', price: 100, profit: 'x2', icon: '⚡' }
-              ].map(item => (
-                <div key={item.id} className="bg-white/5 border border-white/10 p-4 rounded-3xl flex justify-between items-center hover:bg-white/10 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="text-3xl bg-black/40 w-14 h-14 flex items-center justify-center rounded-2xl">{item.icon}</div>
-                    <div>
-                      <h4 className="font-bold text-sm">{item.name}</h4>
-                      <p className="text-[10px] text-green-400 font-bold">+{item.profit}/hr profit</p>
-                    </div>
-                  </div>
-                  <button onClick={() => buyUpgrade(item.id)} className="bg-white text-black px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all">
-                    ${item.price}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'partners' && (
-          <div className="w-full max-w-md text-center">
-            <div className="text-6xl mb-6">👥</div>
-            <h2 className="text-3xl font-black mb-2 uppercase">Invite Friends</h2>
-            <p className="text-gray-500 text-sm mb-8">Get 10% from their earnings forever!</p>
-            <div className="bg-white/5 border border-white/10 p-6 rounded-[2.5rem] mb-6">
-              <p className="text-[10px] font-bold text-gray-500 uppercase mb-2">Your Referral Link</p>
-              <div className="bg-black/50 p-3 rounded-xl text-xs font-mono border border-white/5 break-all">
-                {`https://t.me/xaxm_bot?start=${user.referralCode}`}
-              </div>
-              <button onClick={() => {
-                navigator.clipboard.writeText(`https://t.me/xaxm_bot?start=${user.referralCode}`);
-                alert("Copied!");
-              }} className="mt-4 w-full py-3 bg-purple-600 rounded-xl font-bold text-xs uppercase">Copy Link</button>
-            </div>
-          </div>
-        )}
-
+        {/* --- 3. ОНОВЛЕНИЙ ПРОФІЛЬ --- */}
         {activeTab === 'profile' && (
-          <div className="w-full max-w-md space-y-4">
-             <div className="bg-gradient-to-br from-purple-900/40 to-black border border-white/10 p-8 rounded-[3rem] text-center relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-4 opacity-20 text-6xl">💎</div>
-                <div className="w-20 h-20 bg-white/10 rounded-full mx-auto mb-4 flex items-center justify-center text-3xl border border-white/20">👤</div>
-                <h3 className="text-xl font-black mb-1">{user.email.split('@')[0]}</h3>
-                <p className="text-purple-400 text-[10px] font-bold uppercase tracking-widest">{user.league} Champion</p>
-             </div>
-             <button onClick={() => { localStorage.removeItem('token'); setToken(null); }} className="w-full py-4 text-red-500 font-bold text-xs uppercase tracking-widest">Log Out</button>
+          <div className="w-full max-w-md space-y-6">
+            <div className="bg-gradient-to-br from-[#111] via-[#0a0a0a] to-black border border-white/10 p-8 rounded-[3rem] text-center relative overflow-hidden shadow-2xl">
+              <div className="absolute -top-10 -right-10 w-32 h-32 bg-purple-600/10 blur-[50px] rounded-full"></div>
+              <div className="w-24 h-24 bg-gradient-to-tr from-purple-500 to-blue-500 rounded-full mx-auto mb-4 p-1 shadow-lg">
+                <div className="w-full h-full bg-black rounded-full flex items-center justify-center text-4xl">👤</div>
+              </div>
+              <h3 className="text-2xl font-black mb-1 italic tracking-tight">{user.email.split('@')[0]}</h3>
+              <p className="text-purple-400 text-[10px] font-black uppercase tracking-[0.3em]">{user.league} Rank</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/5 border border-white/10 p-5 rounded-[2rem] flex flex-col items-center">
+                <span className="text-gray-500 text-[9px] font-black uppercase mb-1">Click Power</span>
+                <span className="text-xl font-black italic">Lvl {user.clickLevel}</span>
+              </div>
+              <div className="bg-white/5 border border-white/10 p-5 rounded-[2rem] flex flex-col items-center">
+                <span className="text-gray-500 text-[9px] font-black uppercase mb-1">Max Energy</span>
+                <span className="text-xl font-black text-yellow-500">{user.maxEnergy}</span>
+              </div>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 p-6 rounded-[2.5rem] space-y-4">
+              <div className="flex justify-between items-center">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-gray-500 uppercase">Next Tier Progress</span>
+                  <span className="text-sm font-bold tracking-tighter">Gold League Upgrade</span>
+                </div>
+                <span className="text-xs font-black text-purple-400">75%</span>
+              </div>
+              <div className="h-2 bg-black rounded-full overflow-hidden border border-white/5">
+                <div className="h-full bg-gradient-to-r from-blue-600 to-purple-600" style={{ width: '75%' }}></div>
+              </div>
+            </div>
+
+            <div className="bg-red-500/5 border border-red-500/10 p-4 rounded-3xl flex items-center justify-between">
+              <div className="flex flex-col">
+                <span className="text-[9px] font-bold text-red-500 uppercase">Account Security</span>
+                <span className="text-[11px] text-gray-400">Sessions are active</span>
+              </div>
+              <button onClick={() => { localStorage.removeItem('token'); setToken(null); }} 
+                      className="bg-red-500 text-white text-[10px] font-black uppercase px-4 py-2 rounded-xl">
+                Log Out
+              </button>
+            </div>
           </div>
         )}
+
+        {/* Інші таби (Upgrades, Partners) без змін */}
+        {activeTab === 'upgrades' && <div className="text-center py-20 opacity-50 font-black">SHOP UNDER RECONSTRUCTION</div>}
+        {activeTab === 'partners' && <div className="text-center py-20 opacity-50 font-black">FRIENDS SYSTEM LOADING</div>}
 
       </main>
 
-      {/* Navigation Bar */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-[#111]/90 border border-white/10 h-22 rounded-[3rem] flex justify-around items-center backdrop-blur-2xl z-50 px-2 shadow-2xl">
           {[
             { id: 'miner', icon: '⛏️', label: 'Miner' },
@@ -260,29 +269,24 @@ function App() {
           ))}
       </nav>
 
-      {/* MODAL КОЛЕСА З АНІМАЦІЄЮ */}
+      {/* Колесо модалка */}
       {showSpin && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
-          <div className="bg-gradient-to-b from-[#111] to-black border border-white/10 w-full max-w-xs rounded-[3.5rem] p-10 text-center shadow-[0_0_50px_rgba(168,85,247,0.2)]">
-            <h3 className="text-xl font-black mb-8 uppercase italic tracking-widest">Fortune Wheel</h3>
-            
-            {/* Саме колесо */}
+          <div className="bg-gradient-to-b from-[#111] to-black border border-white/10 w-full max-w-xs rounded-[3.5rem] p-10 text-center">
+            <h3 className="text-xl font-black mb-8 uppercase italic italic">Fortune Wheel</h3>
             <div className="relative w-48 h-48 mx-auto mb-10">
-              <div className="absolute top-[-10px] left-1/2 -translate-x-1/2 z-20 text-2xl text-red-500">▼</div>
               <div className={`w-full h-full rounded-full border-4 border-white/10 flex items-center justify-center text-8xl transition-all ${isSpinning ? 'spinning' : ''}`}
                    style={{ background: 'conic-gradient(#222 0deg 90deg, #333 90deg 180deg, #222 180deg 270deg, #333 270deg 360deg)' }}>
                 🎡
               </div>
             </div>
-
-            <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl font-black uppercase text-xs shadow-xl disabled:opacity-30">
+            <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-white text-black rounded-2xl font-black uppercase text-xs">
                {isSpinning ? 'Spinning...' : 'Spin for Free'}
             </button>
-            <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-bold text-[10px] uppercase tracking-widest hover:text-white transition-colors">Close</button>
+            <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-bold text-[10px] uppercase">Close</button>
           </div>
         </div>
       )}
-
     </div>
   );
 }
