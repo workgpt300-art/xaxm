@@ -21,7 +21,7 @@ const translations = {
     startQuiz: "Start Quiz", done: "Done", claim: "Claim", invite: "Invite Friends",
     inviteDesc: "Get 10% from friend's earnings", noFriends: "No friends yet",
     logout: "Log Out", copy: "Copy", sync: "SYNCING...", nextLeague: "Next League at",
-    combo: "COMBO", dailyCheck: "Daily Reward"
+    combo: "COMBO", dailyCheck: "Daily Reward", bonus: "COMBO BONUS"
   },
   ua: {
     miner: "Майнер", tasks: "Завдання", shop: "Магазин", friends: "Друзі", profile: "Профіль",
@@ -31,7 +31,7 @@ const translations = {
     startQuiz: "Почати тест", done: "Готово", claim: "Забрати", invite: "Запросити друзів",
     inviteDesc: "Отримуй 10% від заробітку друзів", noFriends: "Друзів поки немає",
     logout: "Вийти", copy: "Копіювати", sync: "СИНХРОНІЗАЦІЯ...", nextLeague: "Наступна ліга через",
-    combo: "КОМБО", dailyCheck: "Щоденна нагорода"
+    combo: "КОМБО", dailyCheck: "Щоденна нагорода", bonus: "КОМБО БОНУС"
   }
 };
 
@@ -62,6 +62,11 @@ function App() {
     { id: 'click_master', title: 'Level 5 Clicker', reward: 75, icon: '🖱️', type: 'requirement', reqValue: 5, completed: false },
     { id: 'wheel_spin', title: 'Spin the Wheel', reward: 25, icon: '🎡', type: 'action', completed: false }
   ]);
+
+  // Розрахунок додаткового бонусу за комбо (кожні 25 комбо = +0.25)
+  const comboBonus = useMemo(() => {
+    return Math.floor(combo / 25) * 0.25;
+  }, [combo]);
 
   const leagueInfo = useMemo(() => {
     if (!user) return null;
@@ -135,25 +140,40 @@ function App() {
 
     const now = Date.now();
     setLastTap(now);
-    setCombo(prev => prev + 1);
+    const newCombo = combo + 1;
+    setCombo(newCombo);
+
+    // Розрахунок прибутку за клік: базовий + комбо бонус
+    const baseClick = (user.clickLevel * 0.01);
+    const currentBonus = Math.floor(newCombo / 25) * 0.25;
+    const totalClickValue = baseClick + currentBonus;
 
     const id = now;
     const x = e.clientX || (e.touches && e.touches[0].clientX);
     const y = e.clientY || (e.touches && e.touches[0].clientY);
-    const clickVal = (user.clickLevel * 0.01).toFixed(2);
     
-    setClicks(prev => [...prev, { id, x, y, val: clickVal, isCombo: combo > 10 }]);
+    setClicks(prev => [...prev, { 
+        id, 
+        x, 
+        y, 
+        val: totalClickValue.toFixed(2), 
+        isCombo: newCombo >= 25 
+    }]);
+    
     setTimeout(() => setClicks(prev => prev.filter(c => c.id !== id)), 800);
 
     setUser(p => ({ 
       ...p, 
-      balance: p.balance + (p.clickLevel * 0.01), 
+      balance: p.balance + totalClickValue, 
       energy: p.energy - 1,
-      totalEarned: (p.totalEarned || 0) + (p.clickLevel * 0.01),
+      totalEarned: (p.totalEarned || 0) + totalClickValue,
       totalClicks: (p.totalClicks || 0) + 1
     }));
     
-    await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
+    // Відправляємо тап на сервер (можна додати бонус і в логіку бекенду)
+    await axios.post(`${API_URL}/api/user/tap`, { 
+        bonus: currentBonus 
+    }, { headers: { Authorization: `Bearer ${token}` } });
   };
 
   const completeTask = async (taskId, reward) => {
@@ -269,7 +289,7 @@ function App() {
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-600/10 blur-[120px] rounded-full"></div>
 
       {clicks.map(c => (
-        <span key={c.id} className={`absolute pointer-events-none font-black z-[100] animate-float-up ${c.isCombo ? 'text-yellow-400 text-4xl' : 'text-white text-3xl'}`} style={{ left: c.x, top: c.y }}>
+        <span key={c.id} className={`absolute pointer-events-none font-black z-[100] animate-float-up ${c.isCombo ? 'text-yellow-400 text-4xl drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]' : 'text-white text-3xl'}`} style={{ left: c.x, top: c.y }}>
           +${c.val} {c.isCombo && '🔥'}
         </span>
       ))}
@@ -283,10 +303,10 @@ function App() {
             </div>
         </button>
         <div className="flex gap-2 items-center">
-          {combo > 5 && (
+          {combo > 0 && (
             <div className="flex flex-col items-end leading-none mr-2">
-              <span className="text-[8px] font-black text-yellow-500 uppercase">{t.combo}</span>
-              <span className="text-base font-black italic">x{combo}</span>
+              <span className={`text-[8px] font-black uppercase ${combo >= 25 ? 'text-yellow-500' : 'text-gray-500'}`}>{t.combo}</span>
+              <span className={`text-base font-black italic ${combo >= 25 ? 'text-yellow-400 scale-110' : 'text-white'} transition-all`}>x{combo}</span>
             </div>
           )}
           <button onClick={() => setLang(lang === 'ua' ? 'en' : 'ua')} className="glass-card px-3 py-1.5 rounded-xl text-[9px] font-black border-white/10">
@@ -296,22 +316,29 @@ function App() {
         </div>
       </header>
 
-      {/* Головна секція з прокруткою тільки там де треба */}
       <main className="flex-1 overflow-y-auto px-6 pt-4 pb-32">
         {activeTab === 'miner' && (
           <div className="flex flex-col items-center justify-between min-h-full py-2 animate-in fade-in zoom-in-95">
             <div className="text-center">
               <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.4em] mb-1">{t.totalBal}</p>
               <h1 className="text-6xl font-black tracking-tighter drop-shadow-2xl">${(user.balance || 0).toFixed(3)}</h1>
-              <div className="mt-2 inline-block px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-black uppercase tracking-widest">
-                +${(user.passiveIncome || 0).toFixed(2)} / HR
+              
+              <div className="flex flex-col gap-2 mt-3 items-center">
+                  <div className="inline-block px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[9px] font-black uppercase tracking-widest">
+                    +${(user.passiveIncome || 0).toFixed(2)} / HR
+                  </div>
+                  {comboBonus > 0 && (
+                    <div className="inline-block px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[9px] font-black uppercase tracking-widest animate-pulse">
+                        {t.bonus}: +${comboBonus.toFixed(2)}
+                    </div>
+                  )}
               </div>
             </div>
 
             <button onPointerDown={handleTap} className="relative w-64 h-64 sm:w-72 sm:h-72 my-8 active:scale-[0.92] transition-all duration-75 group touch-none">
-              <div className={`absolute inset-0 blur-[60px] rounded-full transition-colors ${combo > 20 ? 'bg-orange-500/40' : 'bg-blue-500/20'}`}></div>
-              <div className="w-full h-full bg-gradient-to-b from-[#1a1a24] to-[#050505] rounded-full border-[6px] border-white/10 shadow-2xl flex items-center justify-center relative z-10 overflow-hidden">
-                <span className={`text-8xl transition-transform ${combo > 20 ? 'brightness-125 scale-110' : ''}`}>💎</span>
+              <div className={`absolute inset-0 blur-[60px] rounded-full transition-colors ${combo >= 25 ? 'bg-yellow-500/40' : 'bg-blue-500/20'}`}></div>
+              <div className={`w-full h-full bg-gradient-to-b from-[#1a1a24] to-[#050505] rounded-full border-[6px] transition-colors ${combo >= 25 ? 'border-yellow-500/50 shadow-[0_0_30px_rgba(234,179,8,0.3)]' : 'border-white/10'} shadow-2xl flex items-center justify-center relative z-10 overflow-hidden`}>
+                <span className={`text-8xl transition-transform ${combo >= 25 ? 'brightness-125 scale-110' : ''}`}>💎</span>
               </div>
             </button>
 
@@ -327,7 +354,6 @@ function App() {
           </div>
         )}
 
-        {/* Секція завдань, магазину тощо — вони використовують той самий скрол */}
         {activeTab === 'tasks' && (
           <div className="w-full max-w-md mx-auto space-y-6 animate-in slide-in-from-bottom-8">
             <h2 className="text-3xl font-black italic uppercase tracking-tighter">{t.tasks}</h2>
@@ -444,7 +470,6 @@ function App() {
         )}
       </main>
 
-      {/* Нижня Навігація — адаптована висота */}
       <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-md h-20 glass-card rounded-[2.5rem] flex justify-around items-center backdrop-blur-2xl z-50 px-2 shadow-2xl border border-white/10">
           {[
             { id: 'miner', icon: '⛏️', label: t.miner },
@@ -460,7 +485,7 @@ function App() {
           ))}
       </nav>
 
-      {/* МОДАЛКИ (Без змін в логіці) */}
+      {/* MODALS */}
       {showQuiz && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-6">
           <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 relative neon-border-blue shadow-2xl">
