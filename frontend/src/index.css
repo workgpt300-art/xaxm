@@ -2,16 +2,55 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --neon-blue: rgba(0, 150, 255, 0.4);
+  --neon-red: rgba(255, 0, 60, 0.4);
+}
+
 body {
   margin: 0;
-  background-color: #050505;
+  /* Глибокий радіальний градієнт для об'єму */
+  background: radial-gradient(circle at 20% 20%, rgba(255, 0, 60, 0.15), transparent 40%),
+              radial-gradient(circle at 80% 80%, rgba(0, 150, 255, 0.15), transparent 40%),
+              #050505;
   color: white;
   font-family: 'Inter', sans-serif;
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
+  min-height: 100vh;
 }
 
-/* Анімація для колеса */
+/* Скляний ефект для всіх карток (завдання, магазин, меню) */
+.glass-card {
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+}
+
+/* Неонова підсвітка для активних елементів */
+.neon-border-blue {
+  border-color: rgba(0, 150, 255, 0.5) !important;
+  box-shadow: 0 0 15px rgba(0, 150, 255, 0.2);
+}
+
+.neon-border-red {
+  border-color: rgba(255, 0, 60, 0.5) !important;
+  box-shadow: 0 0 15px rgba(255, 0, 60, 0.2);
+}
+
+/* Анімація пульсації головної кнопки (як неон машини) */
+@keyframes neon-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 150, 255, 0.2); transform: scale(1); }
+  50% { box-shadow: 0 0 40px rgba(0, 150, 255, 0.4); transform: scale(1.02); }
+}
+
+.main-button-glow {
+  animation: neon-pulse 3s infinite ease-in-out;
+}
+
+/* --- Твої оригінальні анімації (збережено) --- */
+
 @keyframes wheel-rotate {
   from { transform: rotate(0deg); }
   to { transform: rotate(3600deg); } /* 10 повних обертів */
@@ -25,20 +64,15 @@ body {
 * {
   user-select: none;
 }
+
 @keyframes float-up {
-  0% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(-100px); opacity: 0; }
+  0% { transform: translateY(0); opacity: 1; scale: 1; }
+  100% { transform: translateY(-120px); opacity: 0; scale: 1.2; }
 }
 
 .animate-float-up {
   animation: float-up 0.8s ease-out forwards;
-}
-
-@keyframes wheel-rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(3600deg); } 
-}
-
-.spinning {
-  animation: wheel-rotate 4s cubic-bezier(0.15, 0, 0.15, 1) forwards;
+  pointer-events: none;
+  font-weight: bold;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
 }
