@@ -26,7 +26,7 @@ const translations = {
   },
   ua: {
     miner: "Майнер", tasks: "Завдання", shop: "Магазин", friends: "Друзі", profile: "Профіль",
-    welcome: "З поверненням", create: "Створити акаунт", login: "Увійти", join: "Приєднатися",
+    welcome: "З поверненням", create: "Створити акаунт", login: "Уйти", join: "Приєднатися",
     reg: "Реєстрація", hasAcc: "Вже є акаунт?", totalBal: "Загальний баланс",
     energy: "Енергія", daily: "Щоденно", quizTitle: "Вікторина знань", quizDesc: "Зароби до $5.00",
     startQuiz: "Почати тест", done: "Готово", claim: "Забрати", invite: "Запросити друзів",
@@ -57,7 +57,6 @@ function App() {
   const [lastTap, setLastTap] = useState(0);
   const [notif, setNotif] = useState(null);
   
-  // Кулдауни
   const [wheelCooldown, setWheelCooldown] = useState(0);
   const [dailyCooldown, setDailyCooldown] = useState(0);
   const [taskLoading, setTaskLoading] = useState(null);
@@ -86,7 +85,6 @@ function App() {
     return { current, next };
   }, [user]);
 
-  // Форматування часу
   const formatTime = (ms) => {
     if (ms <= 0) return "00:00:00";
     const h = Math.floor(ms / 3600000);
@@ -95,7 +93,6 @@ function App() {
     return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Логіка оновлення кулдаунів
   useEffect(() => {
     const checkTimers = () => {
       const lastSpin = localStorage.getItem('last_spin_time');
@@ -297,12 +294,24 @@ function App() {
     }
   };
 
+  // --- ПОКРАЩЕНА ФУНКЦІЯ BUYUPGRADE ---
   const buyUpgrade = async (id) => {
+    const shopPrices = { 'miner_v1': 50, 'miner_v2': 250, 'multitap': 100 };
+    const price = shopPrices[id];
+
+    if (user.balance < price) {
+      showMessage(`${t.lowBalance} ($${price})`);
+      return;
+    }
+
     try {
       const res = await axios.post(`${API_URL}/api/upgrades/buy`, { upgradeId: id }, { headers: { Authorization: `Bearer ${token}` } });
       setUser(res.data.user);
       showMessage("Upgrade Success!");
-    } catch (e) { showMessage(t.lowBalance); }
+    } catch (e) { 
+      showMessage(e.response?.data?.error || t.lowBalance);
+      fetchUser(token); // При помилці 400 оновлюємо баланс з сервера
+    }
   };
 
   const handleSpin = async () => {
@@ -313,7 +322,7 @@ function App() {
       setTimeout(() => {
         setIsSpinning(false);
         setShowSpin(false);
-        showMessage(`Win: $${res.data.win}!`);
+        showMessage(`Win:$${res.data.win}!`);
         
         localStorage.setItem('last_spin_time', Date.now().toString());
         setWheelCooldown(24 * 60 * 60 * 1000);
@@ -454,7 +463,6 @@ function App() {
                   {dailyCooldown > 0 ? t.wait : t.claim}
                 </button>
             </div>
-            {/* QUIZ SECTION */}
             <div className="relative overflow-hidden glass-card p-6 rounded-[2.5rem] neon-border-blue">
                 <span className="bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase">{t.daily}</span>
                 <h3 className="text-xl font-black mt-2 mb-1">{t.quizTitle}</h3>
@@ -578,7 +586,6 @@ function App() {
           ))}
       </nav>
 
-      {/* MODALS */}
       {showQuiz && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 relative neon-border-blue shadow-2xl animate-in zoom-in-95">
@@ -595,70 +602,19 @@ function App() {
                 </div>
                 <div className="space-y-2">
                   {quizData[currentQuestion]?.options.map((opt, idx) => (
-                    <button key={idx} onClick={() => handleQuizAnswer(idx)} className="w-full py-4 bg-white/5 border border-white/10 rounded-xl font-bold text-xs hover:bg-white hover:text-black transition-all active:scale-95">
-                      {opt}
+                    <button key={idx} onClick={() => handleQuizAnswer(idx)} className="w-full py-4 bg-white/5 border border-white/10 rounded-xl font-bold">
+                        {opt}
                     </button>
                   ))}
                 </div>
               </>
             ) : (
-              <div className="text-center py-6">
-                <div className="text-7xl mb-4 animate-bounce">🏆</div>
-                <h3 className="text-2xl font-black mb-6 uppercase italic tracking-tighter">Excellent!</h3>
-                <button onClick={() => setShowQuiz(false)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs active:scale-95 transition-all">Close</button>
-              </div>
+                <div className="text-center py-10">
+                    <div className="text-5xl mb-4">🏆</div>
+                    <h3 className="text-2xl font-black mb-2 italic">QUIZ COMPLETED</h3>
+                    <button onClick={() => setShowQuiz(false)} className="mt-6 px-10 py-4 bg-white text-black rounded-2xl font-black uppercase text-xs">BACK</button>
+                </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {showLeagueModal && (
-        <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300" onClick={() => setShowLeagueModal(false)}>
-            <div className="w-full max-w-sm glass-card rounded-[3rem] p-8 shadow-2xl border border-white/5 animate-in slide-in-from-bottom-10" onClick={e => e.stopPropagation()}>
-               <h2 className="text-2xl font-black mb-8 italic uppercase text-center tracking-tighter">Leagues</h2>
-               <div className="space-y-3">
-                 {LEAGUES.map(l => {
-                   const isCurrent = user.league === l.name;
-                   const isLocked = (user.totalEarned || 0) < l.min;
-                   return (
-                     <div key={l.name} className={`p-4 rounded-[2rem] border transition-all ${isCurrent ? 'bg-white text-black border-white shadow-xl scale-105' : 'bg-white/5 border-white/10 opacity-40'}`}>
-                        <div className="flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${l.color}`}></div>
-                              <span className="font-black uppercase text-[11px] tracking-widest">{l.name}</span>
-                            </div>
-                            {isLocked ? <span className="text-[9px] font-black italic opacity-60">MIN ${l.min}</span> : <span className="text-xs">✔</span>}
-                        </div>
-                     </div>
-                   )
-                 })}
-               </div>
-            </div>
-        </div>
-      )}
-
-      {showSpin && (
-        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="glass-card w-full max-w-sm rounded-[3.5rem] p-10 text-center neon-border-blue relative shadow-2xl">
-            <h2 className="text-3xl font-black italic mb-2 uppercase italic tracking-tighter">Wheel of Fortune</h2>
-            <p className="text-[10px] text-gray-500 font-bold uppercase mb-8">Win up to $50.00 instantly</p>
-            
-            <div className={`w-48 h-48 mx-auto mb-10 rounded-full border-8 border-white/5 relative flex items-center justify-center text-6xl shadow-[0_0_50px_rgba(255,255,255,0.1)] ${isSpinning ? 'animate-spin' : ''}`}>
-              🎡
-              <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-white text-2xl">▼</div>
-            </div>
-
-            <button 
-              onClick={handleSpin} 
-              disabled={isSpinning || wheelCooldown > 0} 
-              className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs transition-all shadow-2xl 
-                ${wheelCooldown > 0 
-                  ? 'bg-gray-800 text-gray-500 cursor-not-allowed' 
-                  : 'bg-white text-black active:scale-95'}`}
-            >
-                {isSpinning ? 'SPINNING...' : wheelCooldown > 0 ? `WAIT ${formatTime(wheelCooldown)}` : 'Spin Wheel'}
-            </button>
-            <button onClick={() => setShowSpin(false)} className="mt-6 text-gray-500 text-[10px] font-black uppercase tracking-widest">Close</button>
           </div>
         </div>
       )}
