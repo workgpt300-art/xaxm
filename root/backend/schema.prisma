@@ -31,6 +31,10 @@ model User {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   
+  // Поле для швидкої перевірки ID виконаних завдань (потрібне для server.js)
+  completedTasks   String[] @default([])
+
+  // Зв'язки
   tasks            UserTask[]
 }
 
