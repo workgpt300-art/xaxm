@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 
-const API_URL = 'https://xaaxm.onrender.com';
+const API_URL = 'https://xaxm-backend.onrender.com';
 const QUIZ_JSON_URL = 'https://raw.githubusercontent.com/workgpt300-art/xaxm/refs/heads/main/frontend/src/quiz.json';
 
 const LEAGUES = [
