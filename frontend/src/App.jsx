@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 const API_URL = 'https://xaxm-backend.onrender.com';
+// Твоє пряме посилання на JSON
+const QUIZ_JSON_URL = 'https://raw.githubusercontent.com/workgpt300-art/xaxm/refs/heads/main/frontend/src/quiz.json';
 
 // Налаштування порогів ліг
 const LEAGUES = [
@@ -20,15 +22,32 @@ function App() {
   const [formData, setFormData] = useState({ email: '', password: '' });
   
   const [showSpin, setShowSpin] = useState(false);
-  const [showLeagueModal, setShowLeagueModal] = useState(false); // Нове вікно ліг
+  const [showLeagueModal, setShowLeagueModal] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
   const [clicks, setClicks] = useState([]);
+
+  // --- НОВІ СТАНИ ДЛЯ ВІКТОРИНИ ---
+  const [quizData, setQuizData] = useState([]);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [quizFinished, setQuizFinished] = useState(false);
 
   // --- 1. АВТОЗАПОВНЕННЯ ---
   useEffect(() => {
     const savedEmail = localStorage.getItem('remembered_email');
     const savedPass = localStorage.getItem('remembered_password');
     if (savedEmail && savedPass) setFormData({ email: savedEmail, password: savedPass });
+  }, []);
+
+  // Завантаження питань вікторини
+  useEffect(() => {
+    const loadQuiz = async () => {
+      try {
+        const res = await axios.get(QUIZ_JSON_URL);
+        setQuizData(res.data);
+      } catch (e) { console.error("Quiz load error"); }
+    };
+    loadQuiz();
   }, []);
 
   const fetchUser = useCallback(async (t) => {
@@ -77,6 +96,31 @@ function App() {
     await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
   };
 
+  // ЛОГІКА ВІДПОВІДІ НА ВІКТОРИНУ
+  const handleQuizAnswer = async (index) => {
+    const question = quizData[currentQuestion];
+    if (index === question.correct) {
+      try {
+        const res = await axios.post(`${API_URL}/api/user/reward`, 
+          { amount: question.reward, taskId: `quiz_${question.id}` }, 
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        setUser(res.data.user);
+        
+        if (currentQuestion < quizData.length - 1) {
+          setCurrentQuestion(prev => prev + 1);
+        } else {
+          setQuizFinished(true);
+        }
+      } catch (e) {
+        alert("You have already received a reward for this question!");
+        setShowQuiz(false);
+      }
+    } else {
+      alert("Wrong answer! Try again.");
+    }
+  };
+
   const buyUpgrade = async (id) => {
     try {
       const res = await axios.post(`${API_URL}/api/upgrades/buy`, { upgradeId: id }, { headers: { Authorization: `Bearer ${token}` } });
@@ -113,7 +157,7 @@ function App() {
           </button>
         </form>
         <button onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="w-full mt-6 text-gray-500 text-sm font-bold">
-           {authMode === 'login' ? "Register account" : "Login to account"}
+            {authMode === 'login' ? "Register account" : "Login to account"}
         </button>
       </div>
     </div>
@@ -168,7 +212,27 @@ function App() {
           </div>
         )}
 
-        {/* TAB: SHOP (ОЖИВИЛИ) */}
+        {/* TAB: TASKS (НОВИЙ) */}
+        {activeTab === 'tasks' && (
+          <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <h2 className="text-2xl font-black mb-6 italic uppercase">Tasks</h2>
+            <div className="relative overflow-hidden bg-gradient-to-br from-[#1a1a2e] to-[#0f0f1a] border border-white/10 p-6 rounded-[2.5rem] shadow-2xl">
+              <div className="relative z-10">
+                <span className="bg-purple-500/20 text-purple-400 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Bonus</span>
+                <h3 className="text-xl font-black mt-3 mb-1">Daily Quiz</h3>
+                <p className="text-gray-400 text-xs mb-6">Earn $5.00 for each correct answer!</p>
+                <button 
+                  onClick={() => { setShowQuiz(true); setQuizFinished(false); setCurrentQuestion(0); }}
+                  className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs active:scale-95 transition-all"
+                >
+                  Start Quiz
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: SHOP */}
         {activeTab === 'upgrades' && (
           <div className="w-full max-w-md space-y-4 animate-in fade-in slide-in-from-bottom-4">
             <h2 className="text-2xl font-black mb-6 italic uppercase">Market</h2>
@@ -193,7 +257,7 @@ function App() {
           </div>
         )}
 
-        {/* TAB: FRIENDS (ОЖИВИЛИ) */}
+        {/* TAB: FRIENDS */}
         {activeTab === 'partners' && (
           <div className="w-full max-w-md space-y-6">
              <div className="bg-gradient-to-br from-purple-900/40 to-black p-8 rounded-[3rem] border border-white/10 text-center">
@@ -236,7 +300,38 @@ function App() {
         )}
       </main>
 
-      {/* MODAL: LEAGUE PROGRESS (Новий функціонал) */}
+      {/* MODAL: QUIZ (НОВИЙ) */}
+      {showQuiz && (
+        <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
+          <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 relative">
+            {!quizFinished ? (
+              <>
+                <div className="text-center mb-6">
+                  <span className="text-[10px] font-black text-purple-500 uppercase">Question {currentQuestion + 1}/{quizData.length}</span>
+                  <h3 className="text-xl font-black mt-2">{quizData[currentQuestion]?.question}</h3>
+                </div>
+                <div className="space-y-3">
+                  {quizData[currentQuestion]?.options.map((opt, idx) => (
+                    <button key={idx} onClick={() => handleQuizAnswer(idx)} className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl font-bold text-sm hover:bg-white hover:text-black transition-all">
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-10">
+                <span className="text-6xl mb-4 block">🏆</span>
+                <h3 className="text-2xl font-black mb-2">Great!</h3>
+                <p className="text-gray-400 text-sm mb-6">Quiz completed.</p>
+                <button onClick={() => setShowQuiz(false)} className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs">Close</button>
+              </div>
+            )}
+            {!quizFinished && <button onClick={() => setShowQuiz(false)} className="w-full mt-6 text-gray-500 text-[10px] font-black uppercase">Cancel</button>}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: LEAGUE PROGRESS */}
       {showLeagueModal && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6" onClick={() => setShowLeagueModal(false)}>
            <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -267,10 +362,11 @@ function App() {
         </div>
       )}
 
-      {/* FOOTER NAV */}
+      {/* FOOTER NAV (ОНОВЛЕНО: ДОДАНО TASKS) */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-[#111]/90 border border-white/10 h-22 rounded-[3rem] flex justify-around items-center backdrop-blur-2xl z-50 px-2 shadow-2xl">
           {[
             { id: 'miner', icon: '⛏️', label: 'Miner' },
+            { id: 'tasks', icon: '📋', label: 'Tasks' }, // Додана кнопка
             { id: 'upgrades', icon: '⚡', label: 'Shop' },
             { id: 'partners', icon: '👥', label: 'Friends' },
             { id: 'profile', icon: '👤', label: 'Account' }
@@ -286,10 +382,10 @@ function App() {
       {showSpin && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="bg-[#111] border border-white/10 w-full max-w-xs rounded-[3.5rem] p-10 text-center shadow-2xl">
-            <h3 className="text-xl font-black mb-8 uppercase italic italic">Fortune Wheel</h3>
+            <h3 className="text-xl font-black mb-8 uppercase italic">Fortune Wheel</h3>
             <div className={`text-8xl mb-12 transition-all duration-[4000ms] ${isSpinning ? 'rotate-[3600deg]' : 'scale-100'}`}>🎡</div>
             <button onClick={handleSpin} disabled={isSpinning} className="w-full py-5 bg-white text-black rounded-3xl font-black uppercase text-xs active:scale-95 transition-transform">
-               {isSpinning ? 'Spinning...' : 'Spin for free'}
+                {isSpinning ? 'Spinning...' : 'Spin for free'}
             </button>
             <button onClick={() => !isSpinning && setShowSpin(false)} className="mt-6 text-gray-500 font-bold text-[10px] uppercase">Close</button>
           </div>
