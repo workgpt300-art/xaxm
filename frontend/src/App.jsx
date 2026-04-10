@@ -2,10 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 const API_URL = 'https://xaxm-backend.onrender.com';
-// Твоє пряме посилання на JSON
 const QUIZ_JSON_URL = 'https://raw.githubusercontent.com/workgpt300-art/xaxm/refs/heads/main/frontend/src/quiz.json';
 
-// Налаштування порогів ліг
 const LEAGUES = [
   { name: "Bronze", min: 0, next: 100 },
   { name: "Silver", min: 100, next: 500 },
@@ -26,20 +24,19 @@ function App() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [clicks, setClicks] = useState([]);
 
-  // --- НОВІ СТАНИ ДЛЯ ВІКТОРИНИ ---
+  // --- СТАНИ ДЛЯ ВІКТОРИНИ ---
   const [quizData, setQuizData] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
+  const [penalty, setPenalty] = useState(0); // Стан для накопиченого штрафу
 
-  // --- 1. АВТОЗАПОВНЕННЯ ---
   useEffect(() => {
     const savedEmail = localStorage.getItem('remembered_email');
     const savedPass = localStorage.getItem('remembered_password');
     if (savedEmail && savedPass) setFormData({ email: savedEmail, password: savedPass });
   }, []);
 
-  // Завантаження питань вікторини
   useEffect(() => {
     const loadQuiz = async () => {
       try {
@@ -60,7 +57,6 @@ function App() {
 
   useEffect(() => { if (token) fetchUser(token); }, [token, fetchUser]);
 
-  // Таймер пасивного доходу
   useEffect(() => {
     const timer = setInterval(() => {
       setUser(p => p ? ({
@@ -96,28 +92,47 @@ function App() {
     await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
   };
 
-  // ЛОГІКА ВІДПОВІДІ НА ВІКТОРИНУ
+  // ОНОВЛЕНА ЛОГІКА ВІДПОВІДІ
   const handleQuizAnswer = async (index) => {
     const question = quizData[currentQuestion];
+    
     if (index === question.correct) {
+      // Розраховуємо фінальну нагороду (мінімум 0.1)
+      const finalReward = Math.max(0.1, question.reward - penalty);
+      
       try {
         const res = await axios.post(`${API_URL}/api/user/reward`, 
-          { amount: question.reward, taskId: `quiz_${question.id}` }, 
+          { amount: finalReward, taskId: `quiz_${question.id}` }, 
           { headers: { Authorization: `Bearer ${token}` } }
         );
         setUser(res.data.user);
         
+        // Скидаємо штраф для наступного питання
+        setPenalty(0);
+
+        // Перевірка: чи є наступне питання?
         if (currentQuestion < quizData.length - 1) {
           setCurrentQuestion(prev => prev + 1);
         } else {
           setQuizFinished(true);
         }
       } catch (e) {
-        alert("You have already received a reward for this question!");
-        setShowQuiz(false);
+        alert("Reward already claimed!");
+        // Якщо помилка сервера, все одно пробуємо показати наступне питання
+        if (currentQuestion < quizData.length - 1) {
+          setCurrentQuestion(prev => prev + 1);
+        } else {
+          setQuizFinished(true);
+        }
       }
     } else {
-      alert("Wrong answer! Try again.");
+      // Логіка прогресивного штрафу
+      alert("Wrong answer! Reward decreased.");
+      setPenalty(prev => {
+        if (prev === 0) return 1.0;      // -1.0
+        if (prev === 1.0) return 2.5;    // -1.0 + -1.5 = 2.5
+        return prev + 2.0;               // далі по -2.0
+      });
     }
   };
 
@@ -184,7 +199,6 @@ function App() {
 
       <main className="flex-1 flex flex-col items-center p-6 pb-32 overflow-y-auto">
         
-        {/* TAB: MINER */}
         {activeTab === 'miner' && (
           <div className="flex flex-col items-center justify-center h-full w-full">
             <div className="text-center mb-10">
@@ -212,7 +226,6 @@ function App() {
           </div>
         )}
 
-        {/* TAB: TASKS (НОВИЙ) */}
         {activeTab === 'tasks' && (
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <h2 className="text-2xl font-black mb-6 italic uppercase">Tasks</h2>
@@ -220,9 +233,9 @@ function App() {
               <div className="relative z-10">
                 <span className="bg-purple-500/20 text-purple-400 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Bonus</span>
                 <h3 className="text-xl font-black mt-3 mb-1">Daily Quiz</h3>
-                <p className="text-gray-400 text-xs mb-6">Earn $5.00 for each correct answer!</p>
+                <p className="text-gray-400 text-xs mb-6">Test your knowledge and earn money!</p>
                 <button 
-                  onClick={() => { setShowQuiz(true); setQuizFinished(false); setCurrentQuestion(0); }}
+                  onClick={() => { setShowQuiz(true); setQuizFinished(false); setCurrentQuestion(0); setPenalty(0); }}
                   className="w-full py-4 bg-white text-black rounded-2xl font-black uppercase text-xs active:scale-95 transition-all"
                 >
                   Start Quiz
@@ -232,7 +245,6 @@ function App() {
           </div>
         )}
 
-        {/* TAB: SHOP */}
         {activeTab === 'upgrades' && (
           <div className="w-full max-w-md space-y-4 animate-in fade-in slide-in-from-bottom-4">
             <h2 className="text-2xl font-black mb-6 italic uppercase">Market</h2>
@@ -257,7 +269,6 @@ function App() {
           </div>
         )}
 
-        {/* TAB: FRIENDS */}
         {activeTab === 'partners' && (
           <div className="w-full max-w-md space-y-6">
              <div className="bg-gradient-to-br from-purple-900/40 to-black p-8 rounded-[3rem] border border-white/10 text-center">
@@ -275,7 +286,6 @@ function App() {
           </div>
         )}
 
-        {/* TAB: PROFILE */}
         {activeTab === 'profile' && (
           <div className="w-full max-w-md space-y-6">
             <div className="bg-white/5 border border-white/10 p-8 rounded-[3rem] text-center">
@@ -300,7 +310,7 @@ function App() {
         )}
       </main>
 
-      {/* MODAL: QUIZ (НОВИЙ) */}
+      {/* MODAL: QUIZ (ОНОВЛЕНО) */}
       {showQuiz && (
         <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 relative">
@@ -309,6 +319,12 @@ function App() {
                 <div className="text-center mb-6">
                   <span className="text-[10px] font-black text-purple-500 uppercase">Question {currentQuestion + 1}/{quizData.length}</span>
                   <h3 className="text-xl font-black mt-2">{quizData[currentQuestion]?.question}</h3>
+                  
+                  {/* Відображення поточної винагороди зі штрафом */}
+                  <p className="text-[10px] font-bold text-green-400 mt-2 uppercase tracking-widest">
+                    Current Reward: ${Math.max(0.1, (quizData[currentQuestion]?.reward - penalty)).toFixed(2)}
+                    {penalty > 0 && <span className="text-red-500 ml-2">(-${penalty.toFixed(1)})</span>}
+                  </p>
                 </div>
                 <div className="space-y-3">
                   {quizData[currentQuestion]?.options.map((opt, idx) => (
@@ -334,39 +350,39 @@ function App() {
       {/* MODAL: LEAGUE PROGRESS */}
       {showLeagueModal && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6" onClick={() => setShowLeagueModal(false)}>
-           <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
-              <h2 className="text-2xl font-black mb-8 italic uppercase text-center">League Progress</h2>
-              <div className="space-y-4">
-                {LEAGUES.map(l => {
-                  const isCurrent = user.league === l.name;
-                  const isLocked = user.totalEarned < l.min;
-                  return (
-                    <div key={l.name} className={`p-4 rounded-3xl border transition-all ${isCurrent ? 'bg-white text-black border-white' : 'bg-white/5 border-white/10 opacity-50'}`}>
-                       <div className="flex justify-between items-center">
-                          <span className="font-black uppercase text-xs">{l.name}</span>
-                          {isLocked ? <span className="text-[10px] font-bold italic">Need ${l.min}</span> : <span className="text-xs">✅</span>}
-                       </div>
-                       {isCurrent && (
-                         <div className="mt-3">
-                            <div className="h-1 bg-black/20 rounded-full overflow-hidden">
-                               <div className="h-full bg-black transition-all" style={{ width: `${Math.min(100, (user.totalEarned / l.next * 100))}%` }}></div>
-                            </div>
-                         </div>
-                       )}
-                    </div>
-                  )
-                })}
-              </div>
-              <button onClick={() => setShowLeagueModal(false)} className="w-full mt-8 py-4 bg-white/5 text-gray-400 font-black uppercase text-[10px] rounded-2xl">Close</button>
-           </div>
+            <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
+               <h2 className="text-2xl font-black mb-8 italic uppercase text-center">League Progress</h2>
+               <div className="space-y-4">
+                 {LEAGUES.map(l => {
+                   const isCurrent = user.league === l.name;
+                   const isLocked = user.totalEarned < l.min;
+                   return (
+                     <div key={l.name} className={`p-4 rounded-3xl border transition-all ${isCurrent ? 'bg-white text-black border-white' : 'bg-white/5 border-white/10 opacity-50'}`}>
+                        <div className="flex justify-between items-center">
+                           <span className="font-black uppercase text-xs">{l.name}</span>
+                           {isLocked ? <span className="text-[10px] font-bold italic">Need ${l.min}</span> : <span className="text-xs">✅</span>}
+                        </div>
+                        {isCurrent && (
+                          <div className="mt-3">
+                             <div className="h-1 bg-black/20 rounded-full overflow-hidden">
+                                <div className="h-full bg-black transition-all" style={{ width: `${Math.min(100, (user.totalEarned / l.next * 100))}%` }}></div>
+                             </div>
+                          </div>
+                        )}
+                     </div>
+                   )
+                 })}
+               </div>
+               <button onClick={() => setShowLeagueModal(false)} className="w-full mt-8 py-4 bg-white/5 text-gray-400 font-black uppercase text-[10px] rounded-2xl">Close</button>
+            </div>
         </div>
       )}
 
-      {/* FOOTER NAV (ОНОВЛЕНО: ДОДАНО TASKS) */}
+      {/* FOOTER NAV */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-[#111]/90 border border-white/10 h-22 rounded-[3rem] flex justify-around items-center backdrop-blur-2xl z-50 px-2 shadow-2xl">
           {[
             { id: 'miner', icon: '⛏️', label: 'Miner' },
-            { id: 'tasks', icon: '📋', label: 'Tasks' }, // Додана кнопка
+            { id: 'tasks', icon: '📋', label: 'Tasks' },
             { id: 'upgrades', icon: '⚡', label: 'Shop' },
             { id: 'partners', icon: '👥', label: 'Friends' },
             { id: 'profile', icon: '👤', label: 'Account' }
