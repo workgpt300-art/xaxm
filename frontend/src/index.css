@@ -25,3 +25,20 @@ body {
 * {
   user-select: none;
 }
+@keyframes float-up {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-100px); opacity: 0; }
+}
+
+.animate-float-up {
+  animation: float-up 0.8s ease-out forwards;
+}
+
+@keyframes wheel-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(3600deg); } 
+}
+
+.spinning {
+  animation: wheel-rotate 4s cubic-bezier(0.15, 0, 0.15, 1) forwards;
+}
