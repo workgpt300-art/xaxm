@@ -24,14 +24,12 @@ function App() {
   const [isSpinning, setIsSpinning] = useState(false);
   const [clicks, setClicks] = useState([]);
 
-  // --- СТАНИ ДЛЯ ВІКТОРИНИ ---
   const [quizData, setQuizData] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
   const [penalty, setPenalty] = useState(0); 
 
-  // --- СТАНИ ДЛЯ ЗАВДАНЬ ---
   const [availableTasks, setAvailableTasks] = useState([
     { id: 'tg_join', title: 'Join Telegram', reward: 50, icon: '✈️', type: 'link', link: 'https://t.me/EarnIO_News', completed: false },
     { id: 'earn_350', title: 'Earn $350 total', reward: 100, icon: '💰', type: 'progress', goal: 350, completed: false },
@@ -59,8 +57,20 @@ function App() {
     try {
       const res = await axios.get(`${API_URL}/api/me`, { headers: { Authorization: `Bearer ${t}` } });
       setUser(res.data);
+      
+      // Синхронізація виконаних завдань з сервера (якщо сервер повертає completedTasks)
+      if (res.data.completedTasks) {
+        setAvailableTasks(prev => prev.map(task => ({
+          ...task,
+          completed: res.data.completedTasks.includes(`task_${task.id}`)
+        })));
+      }
+
       if (res.data.offlineEarned > 0) alert(`Offline profit: +$${res.data.offlineEarned.toFixed(2)}`);
-    } catch (e) { localStorage.removeItem('token'); setToken(null); }
+    } catch (e) { 
+        localStorage.removeItem('token'); 
+        setToken(null); 
+    }
   }, []);
 
   useEffect(() => { if (token) fetchUser(token); }, [token, fetchUser]);
@@ -105,30 +115,40 @@ function App() {
     await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
   };
 
-  // --- ОНОВЛЕНА ФУНКЦІЯ ДЛЯ ЗАВДАНЬ ---
+  // --- ВИПРАВЛЕНА ФУНКЦІЯ ДЛЯ ЗАВДАНЬ ---
   const completeTask = async (taskId, reward) => {
     try {
+      // 1. Відправляємо запит на сервер
       const res = await axios.post(`${API_URL}/api/user/reward`, 
         { amount: reward, taskId: `task_${taskId}` }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      // Оновлюємо стан, використовуючи дані з сервера, але ПРИМУСОВО додаємо ревард, якщо сервер повернув старий баланс
-      setUser(prev => {
-        const baseUser = res.data.user || prev;
-        return {
-          ...baseUser,
-          balance: baseUser.balance + reward, // Гарантуємо додавання
-          totalEarned: (baseUser.totalEarned || 0) + reward
-        };
-      });
+      // 2. Якщо сервер повернув оновленого юзера, ставимо його в стан
+      if (res.data.user) {
+        setUser(res.data.user);
+      } else {
+        // Якщо сервер не повернув юзера, оновлюємо баланс вручну для миттєвого фідбеку
+        setUser(prev => ({
+          ...prev,
+          balance: prev.balance + reward,
+          totalEarned: (prev.totalEarned || 0) + reward
+        }));
+      }
       
+      // 3. Позначаємо як виконане локально
       setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
       alert(`Task completed! +$${reward}`);
+      
+      // 4. Обов'язково робимо ре-фетч, щоб дані точно збігалися з базою
+      fetchUser(token);
+
     } catch (e) {
-      // Якщо на бекенді вже зараховано, просто ставимо статус виконано локально
-      setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
-      console.log("Task already rewarded on server");
+      console.error("Task error:", e);
+      if (e.response?.status === 400) {
+        alert("Task already completed or error on server");
+        setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
+      }
     }
   };
 
@@ -143,8 +163,7 @@ function App() {
       else alert(`Upgrade your Multi-Tap to level 5 first!`);
     } else if (task.type === 'link') {
       window.open(task.link, '_blank');
-      // Невелика затримка перед клеймом для лінків
-      setTimeout(() => completeTask(task.id, task.reward), 1000);
+      setTimeout(() => completeTask(task.id, task.reward), 2000);
     } else if (task.id === 'wheel_spin') {
       alert("Spin the wheel first!");
     }
@@ -160,15 +179,8 @@ function App() {
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        setUser(prev => {
-            const baseUser = res.data.user || prev;
-            return {
-                ...baseUser,
-                balance: baseUser.balance + finalReward,
-                totalEarned: (baseUser.totalEarned || 0) + finalReward
-            };
-        });
-
+        if (res.data.user) setUser(res.data.user);
+        
         setPenalty(0);
         if (currentQuestion < quizData.length - 1) setCurrentQuestion(prev => prev + 1);
         else setQuizFinished(true);
@@ -202,13 +214,11 @@ function App() {
         setShowSpin(false);
         alert(`Win: $${res.data.win}!`);
         
-        // Зараховуємо завдання "Spin the Wheel"
         const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
         if (spinTask && !spinTask.completed) {
             completeTask('wheel_spin', spinTask.reward);
         }
         
-        // Оновлюємо дані користувача після спіну
         fetchUser(token);
       }, 4000);
     } catch (e) { 
@@ -241,7 +251,6 @@ function App() {
 
   return (
     <div className="h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden select-none font-sans">
-      
       {clicks.map(c => (
         <span key={c.id} className="absolute pointer-events-none text-2xl font-black text-white z-[100] animate-float-up" style={{ left: c.x, top: c.y }}>
           +${c.val}
@@ -257,7 +266,6 @@ function App() {
       </header>
 
       <main className="flex-1 flex flex-col items-center p-6 pb-32 overflow-y-auto">
-        
         {activeTab === 'miner' && (
           <div className="flex flex-col items-center justify-center h-full w-full">
             <div className="text-center mb-10">
@@ -288,7 +296,6 @@ function App() {
         {activeTab === 'tasks' && (
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <h2 className="text-2xl font-black mb-2 italic uppercase">Quests</h2>
-            
             <div className="relative overflow-hidden bg-gradient-to-br from-purple-900/40 to-[#0f0f1a] border border-white/10 p-6 rounded-[2.5rem] shadow-2xl">
               <div className="relative z-10">
                 <span className="bg-purple-500 text-white text-[8px] font-black px-2 py-0.5 rounded uppercase">Daily</span>
@@ -391,7 +398,6 @@ function App() {
         )}
       </main>
 
-      {/* MODAL: QUIZ */}
       {showQuiz && (
         <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 relative">
@@ -426,7 +432,6 @@ function App() {
         </div>
       )}
 
-      {/* MODAL: LEAGUE PROGRESS */}
       {showLeagueModal && (
         <div className="fixed inset-0 z-[150] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6" onClick={() => setShowLeagueModal(false)}>
             <div className="w-full max-w-sm bg-[#111] border border-white/10 rounded-[3rem] p-8 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -472,7 +477,6 @@ function App() {
           ))}
       </nav>
 
-      {/* WHEEL MODAL */}
       {showSpin && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="bg-[#111] border border-white/10 w-full max-w-xs rounded-[3.5rem] p-10 text-center shadow-2xl">
