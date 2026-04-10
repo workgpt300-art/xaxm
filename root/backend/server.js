@@ -11,76 +11,41 @@ const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-key';
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'] }));
 app.use(express.json());
 
-// --- Допоміжні функції ---
+// Middleware для перевірки токена
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.sendStatus(401);
 
-const getLeague = (totalEarned) => {
-  if (totalEarned > 5000) return "Diamond";
-  if (totalEarned > 1000) return "Platinum";
-  if (totalEarned > 500) return "Gold";
-  if (totalEarned > 100) return "Silver";
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
+
+// Визначення ліги
+const getLeague = (total) => {
+  if (total >= 5000) return "Diamond";
+  if (total >= 1000) return "Platinum";
+  if (total >= 500) return "Gold";
+  if (total >= 100) return "Silver";
   return "Bronze";
 };
 
-const calculateEnergy = (user) => {
-  const now = new Date();
-  const secondsPassed = (now - new Date(user.lastEnergyUpdate)) / 1000;
-  const recovered = secondsPassed * (user.maxEnergy / 9000); 
-  return Math.min(user.maxEnergy, user.energy + recovered);
-};
+// --- API МАРШРУТИ ---
 
-const calculateOffline = (user) => {
-  const now = new Date();
-  const hours = (now - new Date(user.lastCheckIn)) / (1000 * 60 * 60);
-  const cappedHours = Math.min(hours, 12); 
-  return parseFloat((cappedHours * user.passiveIncome).toFixed(4));
-};
-
-// --- Middleware ---
-const auth = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: "No token" });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch (e) { res.status(401).json({ error: "Invalid token" }); }
-};
-
-// --- Маршрути ---
-
-// НОВИЙ МАРШРУТ ДЛЯ НАГОРОД (ВИПРАВЛЯЄ 404)
-app.post('/api/user/reward', auth, async (req, res) => {
-  const { amount, taskId } = req.body;
-  try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
-    // Перевірка чи завдання вже виконано
-    if (user.completedTasks && user.completedTasks.includes(taskId)) {
-      return res.status(400).json({ error: "Task already completed" });
-    }
-
-    const updated = await prisma.user.update({
-      where: { id: req.user.id },
-      data: {
-        balance: { increment: parseFloat(amount) },
-        totalEarned: { increment: parseFloat(amount) },
-        completedTasks: { push: taskId }, // Додаємо ID завдання в список
-        league: getLeague(user.totalEarned + parseFloat(amount))
-      }
-    });
-
-    res.json({ message: "Reward claimed", user: updated });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Reward error" });
-  }
-});
-
+// Реєстрація та Логін (ти їх вже мав, залишаю базову логіку)
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password } = req.body;
   try {
-    const hashed = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({ 
-      data: { email, password: hashed }
+    const { email, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: { 
+        email, 
+        password: hashedPassword,
+        referralCode: Math.random().toString(36).substring(7).toUpperCase()
+      }
     });
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
     res.json({ token, user });
@@ -88,90 +53,104 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (user && await bcrypt.compare(password, user.password)) {
+  try {
+    const { email, password } = req.body;
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(400).json({ error: "Invalid credentials" });
+    }
     const token = jwt.sign({ id: user.id }, JWT_SECRET);
     res.json({ token, user });
-  } else {
-    res.status(400).json({ error: "Invalid credentials" });
+  } catch (e) { res.status(500).json({ error: "Login failed" }); }
+});
+
+// Отримання даних користувача
+app.get('/api/me', authenticateToken, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    res.json(user);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ОБРОБКА ТАПІВ (Виправляє помилку 500)
+app.post('/api/user/tap', authenticateToken, async (req, res) => {
+  try {
+    const { bonus } = req.body; // Отримуємо бонус від комбо з фронта
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+    if (user.energy < 1) return res.status(400).json({ error: "No energy" });
+
+    // Розрахунок прибутку: (рівень кліку * 0.01) + бонус
+    const clickValue = (user.clickLevel * 0.01) + (bonus || 0);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        balance: { increment: clickValue },
+        totalEarned: { increment: clickValue },
+        totalClicks: { increment: 1 },
+        energy: { decrement: 1 },
+        league: getLeague(user.totalEarned + clickValue)
+      }
+    });
+
+    res.json({ user: updatedUser });
+  } catch (e) {
+    console.error("Tap Error:", e);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
-app.get('/api/me', auth, async (req, res) => {
+// КУПІВЛЯ АПГРЕЙДІВ (Виправляє помилку 500)
+app.post('/api/upgrades/buy', authenticateToken, async (req, res) => {
   try {
+    const { upgradeId } = req.body;
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    const offlineEarned = calculateOffline(user);
-    const currentEnergy = calculateEnergy(user);
 
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: { 
-        balance: { increment: offlineEarned },
-        totalEarned: { increment: offlineEarned },
-        energy: currentEnergy,
-        league: getLeague(user.totalEarned + offlineEarned),
-        lastCheckIn: new Date(),
-        lastEnergyUpdate: new Date()
-      }
-    });
-    res.json({ ...updated, offlineEarned });
-  } catch (e) { res.status(500).json({ error: "Sync error" }); }
-});
+    // Магазин (ID мають збігатися з фронтендом)
+    const items = {
+      'miner_v1': { cost: 50, passive: 0.5, click: 0 },
+      'miner_v2': { cost: 250, passive: 2.5, click: 0 },
+      'multitap': { cost: 100, passive: 0, click: 1 }
+    };
 
-app.post('/api/user/tap', auth, async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    const energy = calculateEnergy(user);
-    if (energy < 1) return res.status(400).json({ error: "Low energy" });
+    const item = items[upgradeId];
+    if (!item) return res.status(400).json({ error: "Item not found" });
+    if (user.balance < item.cost) return res.status(400).json({ error: "Insufficient balance" });
 
-    const tapValue = user.clickLevel * 0.01;
-    const updated = await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
-        balance: { increment: tapValue },
-        totalEarned: { increment: tapValue },
-        energy: energy - 1,
-        league: getLeague(user.totalEarned + tapValue),
-        lastEnergyUpdate: new Date()
+        balance: { decrement: item.cost },
+        passiveIncome: { increment: item.passive },
+        clickLevel: { increment: item.click }
       }
     });
-    res.json(updated);
-  } catch (e) { res.status(500).json({ error: "Tap error" }); }
+
+    res.json({ user: updatedUser });
+  } catch (e) {
+    console.error("Upgrade Error:", e);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-app.post('/api/spin', auth, async (req, res) => {
+// СПІН (Виправляє помилку 500)
+app.post('/api/spin', authenticateToken, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    const now = new Date();
-    if (user.lastSpin && (now - new Date(user.lastSpin)) < 86400000) return res.status(400).json({ error: "Try tomorrow" });
-
-    const win = [0.5, 1, 2, 5, 10][Math.floor(Math.random() * 5)];
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data: { balance: { increment: win }, totalEarned: { increment: win }, lastSpin: now }
+    const win = parseFloat((Math.random() * 5).toFixed(2)); // Випадковий приз
+    const updatedUser = await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        balance: { increment: win },
+        totalEarned: { increment: win }
+      }
     });
-    res.json({ win, balance: updated.balance });
-  } catch (e) { res.status(500).json({ error: "Spin error" }); }
+    res.json({ win, user: updatedUser });
+  } catch (e) {
+    console.error("Spin Error:", e);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-app.post('/api/upgrades/buy', auth, async (req, res) => {
-  const { upgradeId } = req.body;
-  try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    
-    const costs = { 'miner_v1': 50, 'miner_v2': 250, 'multitap': 100 };
-    if (user.balance < costs[upgradeId]) return res.status(400).json({ error: "No money" });
-
-    let updateData = { balance: { decrement: costs[upgradeId] } };
-    if (upgradeId === 'miner_v1') updateData.passiveIncome = { increment: 0.5 };
-    if (upgradeId === 'miner_v2') updateData.passiveIncome = { increment: 2.5 };
-    if (upgradeId === 'multitap') updateData.clickLevel = { increment: 1 };
-
-    const updated = await prisma.user.update({ where: { id: user.id }, data: updateData });
-    res.json({ user: updated });
-  } catch (e) { res.status(500).json({ error: "Buy error" }); }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server on ${PORT}`));
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
