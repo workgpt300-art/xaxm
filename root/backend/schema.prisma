@@ -1,82 +1,52 @@
-// Налаштування клієнта
 generator client {
   provider = "prisma-client-js"
 }
 
-// Підключення до бази (PostgreSQL)
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// Модель Користувача
 model User {
   id               String   @id @default(uuid())
   email            String   @unique
   password         String
   balance          Float    @default(0.0)
-  totalEarned      Float    @default(0.0) // Загальний заробіток за весь час
-  role             String   @default("USER")
+  totalEarned      Float    @default(0.0)
   
-  // --- ПРОКАЧКА ТА ЕНЕРГІЯ ---
+  // Прокачка та Енергія
   clickLevel       Int      @default(1)
-  energy           Int      @default(5000)
+  energy           Float    @default(5000)
   maxEnergy        Int      @default(5000)
   lastEnergyUpdate DateTime @default(now())
-  lastBonusDate    DateTime?
+  
+  // Нові функції
+  passiveIncome    Float    @default(0.0)
+  league           String   @default("Bronze") 
+  lastSpin         DateTime?
+  lastCheckIn      DateTime @default(now())
 
-  // --- РЕФЕРАЛЬНА СИСТЕМА ТА АГЕНТСТВО ---
-  referralCode     String   @unique @default(cuid()) // Твій унікальний код для посилання
-  referrals        User[]   @relation("UserReferrals")
-  referrer         User?    @relation("UserReferrals", fields: [referrerId], references: [id])
+  referralCode     String   @unique @default(cuid())
   referrerId       String?
-  
-  // Рівні партнерства (як у HAHM)
-  agentLevel       Int      @default(1) // 1 - Junior, 2 - Middle, 3 - Senior тощо
-  teamTurnover     Float    @default(0.0) // Оборот всієї команди (для розрахунку бонусів)
-
-  // --- ЗВ'ЯЗКИ ---
-  tasks            UserTask[]
-  transactions     Transaction[] // Історія виводів та нарахувань
-  
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  
+  tasks            UserTask[]
 }
 
-// Модель Завдання
 model Task {
   id          String     @id @default(uuid())
   title       String     @unique
-  description String?
   reward      Float
-  type        String     @default("SOCIAL") // TG, TWITTER, VIDEO
-  link        String?    // Посилання на ресурс
-  category    String     @default("General")
+  type        String     @default("SOCIAL")
   users       UserTask[]
 }
 
-// Зв'язок між користувачем і завданням (Історія виконання)
 model UserTask {
   id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id])
   userId    String
-  task      Task     @relation(fields: [taskId], references: [id])
   taskId    String
-  status    String   @default("COMPLETED") // PENDING, COMPLETED, FAILED
-  createdAt DateTime @default(now())
-
-  @@unique([userId, taskId]) // Користувач не може виконати одне завдання двічі
-  @@index([userId, taskId, createdAt])
-}
-
-// Модель Транзакцій (Гаманець/Вивід)
-model Transaction {
-  id        String   @id @default(uuid())
-  amount    Float
-  type      String   // WITHDRAWAL (вивід), REFERRAL_BONUS, TASK_REWARD
-  status    String   @default("PENDING") // PENDING, SUCCESS, REJECTED
-  address   String?  // Адреса гаманця (наприклад, USDT TRC20)
   user      User     @relation(fields: [userId], references: [id])
-  userId    String
-  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id])
+  @@unique([userId, taskId])
 }
