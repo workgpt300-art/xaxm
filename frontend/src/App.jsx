@@ -59,7 +59,6 @@ function App() {
     { id: 'wheel_spin', title: 'Spin the Wheel', reward: 25, icon: '🎡', type: 'action', completed: false }
   ]);
 
-  // Розрахунок прогресу до наступної ліги
   const leagueInfo = useMemo(() => {
     if (!user) return null;
     const current = LEAGUES.find(l => l.name === user.league) || LEAGUES[0];
@@ -130,7 +129,8 @@ function App() {
     const id = Date.now();
     const x = e.clientX || (e.touches && e.touches[0].clientX);
     const y = e.clientY || (e.touches && e.touches[0].clientY);
-    setClicks(prev => [...prev, { id, x, y, val: (user.clickLevel * 0.01).toFixed(2) }]);
+    const clickVal = (user.clickLevel * 0.01).toFixed(2);
+    setClicks(prev => [...prev, { id, x, y, val: clickVal }]);
     setTimeout(() => setClicks(prev => prev.filter(c => c.id !== id)), 800);
 
     setUser(p => ({ 
@@ -150,7 +150,6 @@ function App() {
       );
       if (res.data.user) setUser(res.data.user);
       setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
-      fetchUser(token);
     } catch (e) {
       if (e.response?.status === 400) {
         setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
@@ -252,18 +251,15 @@ function App() {
 
   return (
     <div className="h-screen bg-[#050505] text-white flex flex-col relative overflow-hidden select-none font-sans">
-      {/* Background Glow */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-red-600/10 blur-[120px] rounded-full"></div>
 
-      {/* Floating Numbers */}
       {clicks.map(c => (
         <span key={c.id} className="absolute pointer-events-none text-3xl font-black text-white z-[100] animate-float-up" style={{ left: c.x, top: c.y }}>
           +${c.val}
         </span>
       ))}
 
-      {/* Header */}
       <header className="p-5 flex justify-between items-center z-10 backdrop-blur-xl bg-black/40 border-b border-white/5">
         <button onClick={() => setShowLeagueModal(true)} className="flex items-center gap-3 glass-card pr-5 pl-2 py-2 rounded-full border border-white/10 active:scale-95 transition-all">
            <div className={`w-8 h-8 rounded-full bg-gradient-to-tr ${leagueInfo?.current?.color} shadow-lg`}></div>
@@ -285,9 +281,9 @@ function App() {
           <div className="flex flex-col items-center justify-center h-full w-full max-w-md animate-in fade-in zoom-in-95">
             <div className="text-center mb-12">
               <p className="text-gray-500 text-[11px] font-black uppercase tracking-[0.5em] mb-3">{t.totalBal}</p>
-              <h1 className="text-7xl font-black tracking-tighter drop-shadow-2xl">${user.balance.toFixed(3)}</h1>
+              <h1 className="text-7xl font-black tracking-tighter drop-shadow-2xl">${(user.balance || 0).toFixed(3)}</h1>
               <div className="mt-4 inline-block px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-widest">
-                +${user.passiveIncome.toFixed(2)} / HR
+                +${(user.passiveIncome || 0).toFixed(2)} / HR
               </div>
             </div>
 
@@ -303,12 +299,12 @@ function App() {
               <div className="flex justify-between items-end mb-4">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black text-gray-500 uppercase mb-1">{t.energy}</span>
-                  <span className="text-xl font-black text-blue-400">{Math.floor(user.energy)} <span className="text-gray-600 text-sm">/ {user.maxEnergy}</span></span>
+                  <span className="text-xl font-black text-blue-400">{Math.floor(user.energy || 0)} <span className="text-gray-600 text-sm">/ {user.maxEnergy || 1000}</span></span>
                 </div>
                 <div className="text-[10px] font-bold text-gray-500 italic">RECHARGING...</div>
               </div>
               <div className="h-4 bg-black/40 rounded-full overflow-hidden p-[3px] border border-white/5 shadow-inner">
-                <div className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(59,130,246,0.5)]" style={{ width: `${(user.energy/user.maxEnergy)*100}%` }}></div>
+                <div className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-500 rounded-full transition-all duration-300 shadow-[0_0_15px_rgba(59,130,246,0.5)]" style={{ width: `${((user.energy || 0)/(user.maxEnergy || 1000))*100}%` }}></div>
               </div>
             </div>
           </div>
@@ -399,18 +395,18 @@ function App() {
           <div className="w-full max-w-md space-y-6 animate-in slide-in-from-bottom-8">
             <div className="glass-card p-10 rounded-[3.5rem] text-center border border-white/5">
               <div className="w-24 h-24 bg-gradient-to-tr from-red-600 via-purple-600 to-blue-600 rounded-[2.5rem] mx-auto mb-6 flex items-center justify-center text-4xl shadow-2xl border-4 border-white/10 rotate-3">👤</div>
-              <h3 className="text-2xl font-black tracking-tight">{user.email.split('@')[0]}</h3>
-              <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.4em] mt-2 opacity-50">ID: {user.id.slice(-8)}</p>
+              <h3 className="text-2xl font-black tracking-tight">{user.email?.split('@')[0]}</h3>
+              <p className="text-gray-500 text-[10px] font-black uppercase tracking-[0.4em] mt-2 opacity-50">ID: {user.id?.slice(-8)}</p>
             </div>
 
             <div className="grid grid-cols-2 gap-5">
               <div className="glass-card p-6 rounded-[2.5rem] text-center border border-white/5">
                 <p className="text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Total</p>
-                <p className="text-2xl font-black text-green-400">${user.totalEarned?.toFixed(2) || 0}</p>
+                <p className="text-2xl font-black text-green-400">${(user.totalEarned || 0).toFixed(2)}</p>
               </div>
               <div className="glass-card p-6 rounded-[2.5rem] text-center border border-white/5">
                 <p className="text-[10px] font-black text-gray-500 uppercase mb-2 tracking-widest">Click LVL</p>
-                <p className="text-2xl font-black text-blue-400">{user.clickLevel}</p>
+                <p className="text-2xl font-black text-blue-400">{user.clickLevel || 1}</p>
               </div>
             </div>
 
@@ -421,7 +417,6 @@ function App() {
         )}
       </main>
 
-      {/* Navigation */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[94%] max-w-md glass-card h-24 rounded-[3.5rem] flex justify-around items-center backdrop-blur-3xl z-50 px-3 shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/10">
           {[
             { id: 'miner', icon: '⛏️', label: t.miner },
@@ -437,7 +432,6 @@ function App() {
           ))}
       </nav>
 
-      {/* Modals with enhanced styling */}
       {showQuiz && (
         <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in">
           <div className="w-full max-w-sm glass-card rounded-[3.5rem] p-10 relative neon-border-blue shadow-[0_0_100px_rgba(59,130,246,0.2)]">
