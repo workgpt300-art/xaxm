@@ -33,7 +33,7 @@ function App() {
 
   // --- СТАНИ ДЛЯ ЗАВДАНЬ ---
   const [availableTasks, setAvailableTasks] = useState([
-    { id: 'tg_join', title: 'Join Telegram', reward: 50, icon: '✈️', type: 'link', link: 'https://t.me/your_channel', completed: false },
+    { id: 'tg_join', title: 'Join Telegram', reward: 50, icon: '✈️', type: 'link', link: 'https://t.me/EarnIO_News', completed: false },
     { id: 'earn_350', title: 'Earn $350 total', reward: 100, icon: '💰', type: 'progress', goal: 350, completed: false },
     { id: 'click_master', title: 'Level 5 Clicker', reward: 75, icon: '🖱️', type: 'requirement', reqValue: 5, completed: false },
     { id: 'wheel_spin', title: 'Spin the Wheel', reward: 25, icon: '🎡', type: 'action', completed: false }
@@ -91,8 +91,8 @@ function App() {
   const handleTap = async (e) => {
     if (!user || user.energy < 1) return;
     const id = Date.now();
-    const x = e.clientX || e.touches[0].clientX;
-    const y = e.clientY || e.touches[0].clientY;
+    const x = e.clientX || (e.touches && e.touches[0].clientX);
+    const y = e.clientY || (e.touches && e.touches[0].clientY);
     setClicks(prev => [...prev, { id, x, y, val: (user.clickLevel * 0.01).toFixed(2) }]);
     setTimeout(() => setClicks(prev => prev.filter(c => c.id !== id)), 800);
 
@@ -124,7 +124,8 @@ function App() {
       setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
       alert(`Task completed! +$${reward}`);
     } catch (e) {
-      alert(e.response?.data?.error || "Task already completed or error occurred");
+      // Якщо на бекенді вже зараховано, просто ставимо статус виконано локально
+      setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
     }
   };
 
@@ -133,7 +134,7 @@ function App() {
 
     if (task.id === 'earn_350') {
       if ((user.totalEarned || user.balance) >= 350) completeTask(task.id, task.reward);
-      else alert(`You need$${(350 - user.totalEarned).toFixed(2)} more!`);
+      else alert(`You need$${(350 - (user.totalEarned || 0)).toFixed(2)} more!`);
     } else if (task.id === 'click_master') {
       if (user.clickLevel >= 5) completeTask(task.id, task.reward);
       else alert(`Upgrade your Multi-Tap to level 5 first!`);
@@ -141,6 +142,7 @@ function App() {
       window.open(task.link, '_blank');
       completeTask(task.id, task.reward);
     } else if (task.id === 'wheel_spin') {
+      // Якщо користувач натиснув на вже прокрученому, але не зарахованому
       alert("Spin the wheel first!");
     }
   };
@@ -183,17 +185,23 @@ function App() {
     try {
       const res = await axios.post(`${API_URL}/api/spin`, {}, { headers: { Authorization: `Bearer ${token}` } });
       
-      // Автоматично пробуємо виконати завдання на спін
-      const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
-      if (spinTask && !spinTask.completed) completeTask('wheel_spin', spinTask.reward);
-
       setTimeout(() => {
         setIsSpinning(false);
         setShowSpin(false);
         alert(`Win: $${res.data.win}!`);
+        
+        // ВАЖЛИВО: Зараховуємо завдання відразу після закінчення анімації
+        const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
+        if (spinTask && !spinTask.completed) {
+            completeTask('wheel_spin', spinTask.reward);
+        }
+        
         fetchUser(token);
       }, 4000);
-    } catch (e) { setIsSpinning(false); alert(e.response?.data?.error); }
+    } catch (e) { 
+        setIsSpinning(false); 
+        alert(e.response?.data?.error || "Error spinning wheel"); 
+    }
   };
 
   if (!token) return (
@@ -425,7 +433,7 @@ function App() {
                         {isCurrent && (
                           <div className="mt-3">
                              <div className="h-1 bg-black/20 rounded-full overflow-hidden">
-                                <div className="h-full bg-black transition-all" style={{ width: `${Math.min(100, (user.totalEarned / l.next * 100))}%` }}></div>
+                                <div className="h-full bg-black transition-all" style={{ width: `${Math.min(100, (user.totalEarned / (l.next === Infinity ? user.totalEarned : l.next) * 100))}%` }}></div>
                              </div>
                           </div>
                         )}
