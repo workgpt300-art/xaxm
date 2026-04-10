@@ -105,7 +105,7 @@ function App() {
     await axios.post(`${API_URL}/api/user/tap`, {}, { headers: { Authorization: `Bearer ${token}` } });
   };
 
-  // --- ФУНКЦІЇ ДЛЯ ЗАВДАНЬ ---
+  // --- ОНОВЛЕНА ФУНКЦІЯ ДЛЯ ЗАВДАНЬ ---
   const completeTask = async (taskId, reward) => {
     try {
       const res = await axios.post(`${API_URL}/api/user/reward`, 
@@ -113,19 +113,22 @@ function App() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      setUser(prev => ({
-        ...prev,
-        balance: prev.balance + reward,
-        totalEarned: (prev.totalEarned || 0) + reward
-      }));
-
-      if (res.data.user) setUser(res.data.user);
+      // Оновлюємо стан, використовуючи дані з сервера, але ПРИМУСОВО додаємо ревард, якщо сервер повернув старий баланс
+      setUser(prev => {
+        const baseUser = res.data.user || prev;
+        return {
+          ...baseUser,
+          balance: baseUser.balance + reward, // Гарантуємо додавання
+          totalEarned: (baseUser.totalEarned || 0) + reward
+        };
+      });
       
       setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
       alert(`Task completed! +$${reward}`);
     } catch (e) {
       // Якщо на бекенді вже зараховано, просто ставимо статус виконано локально
       setAvailableTasks(prev => prev.map(t => t.id === taskId ? { ...t, completed: true } : t));
+      console.log("Task already rewarded on server");
     }
   };
 
@@ -140,9 +143,9 @@ function App() {
       else alert(`Upgrade your Multi-Tap to level 5 first!`);
     } else if (task.type === 'link') {
       window.open(task.link, '_blank');
-      completeTask(task.id, task.reward);
+      // Невелика затримка перед клеймом для лінків
+      setTimeout(() => completeTask(task.id, task.reward), 1000);
     } else if (task.id === 'wheel_spin') {
-      // Якщо користувач натиснув на вже прокрученому, але не зарахованому
       alert("Spin the wheel first!");
     }
   };
@@ -156,7 +159,16 @@ function App() {
           { amount: finalReward, taskId: `quiz_${question.id}` }, 
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        setUser(res.data.user);
+
+        setUser(prev => {
+            const baseUser = res.data.user || prev;
+            return {
+                ...baseUser,
+                balance: baseUser.balance + finalReward,
+                totalEarned: (baseUser.totalEarned || 0) + finalReward
+            };
+        });
+
         setPenalty(0);
         if (currentQuestion < quizData.length - 1) setCurrentQuestion(prev => prev + 1);
         else setQuizFinished(true);
@@ -190,12 +202,13 @@ function App() {
         setShowSpin(false);
         alert(`Win: $${res.data.win}!`);
         
-        // ВАЖЛИВО: Зараховуємо завдання відразу після закінчення анімації
+        // Зараховуємо завдання "Spin the Wheel"
         const spinTask = availableTasks.find(t => t.id === 'wheel_spin');
         if (spinTask && !spinTask.completed) {
             completeTask('wheel_spin', spinTask.reward);
         }
         
+        // Оновлюємо дані користувача після спіну
         fetchUser(token);
       }, 4000);
     } catch (e) { 
@@ -276,7 +289,6 @@ function App() {
           <div className="w-full max-w-md space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <h2 className="text-2xl font-black mb-2 italic uppercase">Quests</h2>
             
-            {/* Daily Quiz Card */}
             <div className="relative overflow-hidden bg-gradient-to-br from-purple-900/40 to-[#0f0f1a] border border-white/10 p-6 rounded-[2.5rem] shadow-2xl">
               <div className="relative z-10">
                 <span className="bg-purple-500 text-white text-[8px] font-black px-2 py-0.5 rounded uppercase">Daily</span>
@@ -291,7 +303,6 @@ function App() {
               </div>
             </div>
 
-            {/* General Task List */}
             <div className="space-y-3">
               {availableTasks.map(task => (
                 <div key={task.id} className="bg-white/5 border border-white/10 p-4 rounded-[2rem] flex justify-between items-center">
@@ -446,7 +457,6 @@ function App() {
         </div>
       )}
 
-      {/* FOOTER NAV */}
       <nav className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md bg-[#111]/90 border border-white/10 h-22 rounded-[3rem] flex justify-around items-center backdrop-blur-2xl z-50 px-2 shadow-2xl">
           {[
             { id: 'miner', icon: '⛏️', label: 'Miner' },
